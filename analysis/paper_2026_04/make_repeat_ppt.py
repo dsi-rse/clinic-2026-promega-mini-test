@@ -34,7 +34,7 @@ from pipeline.data_loader import DAY_ORDER, ANALYSIS_OUTPUT_DIR
 COMBINED_PATH    = ANALYSIS_OUTPUT_DIR / "images" / "combined_results_kfold_series_idor_139.json"
 CLF_CMP_PATH     = ANALYSIS_OUTPUT_DIR / "images" / "met_classifier_comparison.json"
 DY10_MALATE_PATH = ANALYSIS_OUTPUT_DIR / "images" / "met_classifier_comparison_dy10_malate.json"
-MET_LR_PATH      = ANALYSIS_OUTPUT_DIR / "images" / "met_lgbm_logreg_kfold_139.json"
+MET_LR_PATH      = ANALYSIS_OUTPUT_DIR / "images" / "met_lgbm_logreg_kfold_nan_raw.json"
 TWO_PANEL_PATH   = Path("figures/combined_kfold_two_panel_series_idor_139.png")
 TABLE_PATH       = Path("figures/combined_kfold_table_series_idor_139.png")
 OUT_MET          = Path("figures/met_variants_analysis.pptx")
