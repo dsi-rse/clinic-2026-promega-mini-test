@@ -35,6 +35,8 @@ COMBINED_PATH    = ANALYSIS_OUTPUT_DIR / "images" / "combined_results_kfold_seri
 CLF_CMP_PATH     = ANALYSIS_OUTPUT_DIR / "images" / "met_classifier_comparison.json"
 DY10_MALATE_PATH = ANALYSIS_OUTPUT_DIR / "images" / "met_classifier_comparison_dy10_malate.json"
 MET_LR_PATH      = ANALYSIS_OUTPUT_DIR / "images" / "met_lgbm_logreg_kfold_nan_raw.json"
+MET_MORPH_PATH   = ANALYSIS_OUTPUT_DIR / "images" / "met_morph_lgbm_logreg_kfold.json"
+FUSION_LR_PATH   = ANALYSIS_OUTPUT_DIR / "images" / "fusion_lgbm_vs_logreg.json"
 TWO_PANEL_PATH   = Path("figures/combined_kfold_two_panel_series_idor_139.png")
 TABLE_PATH       = Path("figures/combined_kfold_table_series_idor_139.png")
 OUT_MET          = Path("figures/met_variants_analysis.pptx")
@@ -696,12 +698,118 @@ def _plot_spaghetti(combined, days):
     return fig
 
 
-def build_cv_ppt(combined, days, met_lr=None):
+def _plot_lgbm_vs_logreg_standalone(combined, days):
+    """4-panel: met_lgbm, met_logreg, morph_lgbm, morph_logreg."""
+    specs = [
+        ("met_nan_lgbm",   "Met (LGBM)",        "#2ca02c", "o", "-"),
+        ("met_nan_logreg", "Met (LogReg)",       "#ff7f0e", "^", "--"),
+        ("morph_lgbm",     "Morph (LGBM)",       "#9467bd", "s", "-"),
+        ("morph_logreg",   "Morph (LogReg)",     "#c5b0d5", "v", "--"),
+    ]
+    fig, axes = plt.subplots(1, 4, figsize=(20, 4.5), sharey=True)
+    for ax, (k, label, color, marker, ls) in zip(axes, specs):
+        for rep in range(10):
+            xs, ys = [], []
+            for i, d in enumerate(days):
+                bas = combined.get(d, {}).get(k, {}).get("repeat_balanced_accuracies", [])
+                if rep < len(bas):
+                    xs.append(i); ys.append(bas[rep])
+            if xs:
+                ax.plot(xs, ys, color=color, lw=0.8, alpha=0.35)
+        xs_m, ys_m, lo, hi = _series(combined, days, k)
+        if xs_m:
+            ax.plot(xs_m, ys_m, color=color, lw=2.5, marker=marker, ms=5, ls=ls)
+            ax.fill_between(xs_m, lo, hi, color=color, alpha=0.18, lw=0)
+        _style_ax(ax, days)
+        ax.set_title(label, fontsize=11, fontweight="bold", color=color)
+    axes[0].set_ylabel("Balanced Accuracy (OOF)", fontsize=10)
+    fig.suptitle("LGBM vs LogReg — Standalone Modalities  (thin=individual repeats, thick=mean±SD)",
+                 fontsize=11, fontweight="bold", y=1.01)
+    plt.tight_layout()
+    return fig
+
+
+def _plot_lgbm_vs_logreg_fusion(combined, days):
+    """Compare all_lgbm, all_logreg, and original all3 fusion."""
+    specs = [
+        ("all_lgbm",                    "Fusion LGBM",     "#1f77b4", "D", "-",  2.5),
+        ("all_logreg",                  "Fusion LogReg",   "#d62728", "P", "-",  2.5),
+        ("met_nan+morph+img_mean_prob", "All3 (orig)",     "#7f7f7f", "o", "--", 1.5),
+        ("met_nan",                     "Met LGBM",        "#2ca02c", "^", ":",  1.5),
+        ("morph",                       "Morph LGBM",      "#9467bd", "s", ":",  1.5),
+        ("img",                         "Image",           "#8c564b", "v", ":",  1.5),
+    ]
+    fig, ax = plt.subplots(figsize=(12, 5))
+    for k, label, color, marker, ls, lw in specs:
+        xs, ys, lo, hi = _series(combined, days, k)
+        if xs:
+            ax.plot(xs, ys, marker=marker, ls=ls, color=color, lw=lw, ms=6, label=label)
+            if lw > 2:
+                ax.fill_between(xs, lo, hi, color=color, alpha=0.12, lw=0)
+    _style_ax(ax, days)
+    ax.set_ylabel("Balanced Accuracy (mean ± 1 SD)", fontsize=10)
+    ax.set_xlabel("Day", fontsize=10)
+    ax.set_title("LGBM vs LogReg Fusion: met+morph+img mean prob  (10×4-fold CV, n=140)",
+                 fontsize=12, fontweight="bold")
+    ax.legend(fontsize=9, loc="upper left", ncol=2)
+    plt.tight_layout()
+    return fig
+
+
+def _plot_lgbm_vs_logreg_diff(combined, days):
+    """Bar chart: LogReg − LGBM delta for met, morph, fusion."""
+    comparisons = [
+        ("met_nan_logreg",  "met_nan_lgbm",  "Met: LR − LGBM",    "#ff7f0e"),
+        ("morph_logreg",    "morph_lgbm",    "Morph: LR − LGBM",  "#c5b0d5"),
+        ("all_logreg",      "all_lgbm",      "Fusion: LR − LGBM", "#d62728"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(18, 4.0), sharey=False)
+    for ax, (k_lr, k_lgbm, title, color) in zip(axes, comparisons):
+        diffs = []
+        xs_valid = []
+        for i, d in enumerate(days):
+            m_lr   = _mean_std(combined, d, k_lr)[0]
+            m_lgbm = _mean_std(combined, d, k_lgbm)[0]
+            if m_lr is not None and m_lgbm is not None:
+                diffs.append(m_lr - m_lgbm)
+                xs_valid.append(i)
+        bar_colors = ["#d62728" if v > 0 else "#1f77b4" for v in diffs]
+        ax.bar(xs_valid, diffs, color=bar_colors, width=0.6)
+        ax.axhline(0, color="black", lw=0.8)
+        if diffs:
+            ymax = max(abs(min(diffs)), abs(max(diffs))) + 0.01
+            ax.set_ylim(-ymax, ymax)
+        _style_ax(ax, days, ylim=ax.get_ylim())
+        ax.set_ylabel("BA difference (LogReg − LGBM)", fontsize=9)
+        ax.set_title(title, fontsize=11, fontweight="bold")
+    fig.suptitle("LogReg minus LGBM  (red=LogReg better, blue=LGBM better)",
+                 fontsize=11, fontweight="bold", y=1.01)
+    plt.tight_layout()
+    return fig
+
+
+def build_cv_ppt(combined, days, met_lr=None, met_morph=None, fusion_lr=None):
     import copy
-    # Merge met_lgbm_logreg results (met_nan_lgbm, met_nan_logreg) into combined for plotting
     combined = copy.deepcopy(combined)
+    # Merge met_nan_logreg from early-days JSON (Dy03–Dy10)
     if met_lr:
         for day, day_r in met_lr.items():
+            if day not in combined:
+                combined[day] = {}
+            for k, v in day_r.items():
+                if k != "repeat_details":
+                    combined[day][k] = v
+    # Merge met_nan_lgbm, met_nan_logreg, morph_lgbm, morph_logreg for all days
+    if met_morph:
+        for day, day_r in met_morph.items():
+            if day not in combined:
+                combined[day] = {}
+            for k, v in day_r.items():
+                if k != "repeat_details":
+                    combined[day][k] = v
+    # Merge all_lgbm, all_logreg fusion
+    if fusion_lr:
+        for day, day_r in fusion_lr.items():
             if day not in combined:
                 combined[day] = {}
             for k, v in day_r.items():
@@ -762,6 +870,18 @@ def build_cv_ppt(combined, days, met_lr=None):
     _content_slide(prs, "Repeat-Level Variance — 4 Key Strategies",
                    _plot_spaghetti(combined, days))
 
+    # 5b. LGBM vs LogReg standalone
+    _content_slide(prs, "LGBM vs LogReg — Standalone (Met & Morphology)",
+                   _plot_lgbm_vs_logreg_standalone(combined, days))
+
+    # 5c. LGBM vs LogReg fusion
+    _content_slide(prs, "LGBM vs LogReg — Fusion (met + morph + img mean prob)",
+                   _plot_lgbm_vs_logreg_fusion(combined, days))
+
+    # 5d. Delta bars
+    _content_slide(prs, "LogReg − LGBM Delta: Where Does Classifier Choice Matter?",
+                   _plot_lgbm_vs_logreg_diff(combined, days))
+
     # 6–15. Per-repeat
     has_cms = bool(combined.get("Dy30", {}).get("met_nan", {}).get("repeat_confusion_matrices"))
     for rep in range(10):
@@ -791,8 +911,10 @@ def main():
     dy10_malate = json.loads(DY10_MALATE_PATH.read_text()) if DY10_MALATE_PATH.exists() else None
     normal_clf  = json.loads(CLF_CMP_PATH.read_text())     if CLF_CMP_PATH.exists()     else None
     met_lr      = json.loads(MET_LR_PATH.read_text())      if MET_LR_PATH.exists()      else None
+    met_morph   = json.loads(MET_MORPH_PATH.read_text())   if MET_MORPH_PATH.exists()   else None
+    fusion_lr   = json.loads(FUSION_LR_PATH.read_text())   if FUSION_LR_PATH.exists()   else None
     build_met_ppt(combined, days, dy10_malate=dy10_malate, normal_clf=normal_clf)
-    build_cv_ppt(combined, days, met_lr=met_lr)
+    build_cv_ppt(combined, days, met_lr=met_lr, met_morph=met_morph, fusion_lr=fusion_lr)
 
 
 if __name__ == "__main__":
