@@ -31,6 +31,7 @@ OUTPUT_PATH    = ANALYSIS_OUTPUT_DIR / "images" / "fusion_lgbm_vs_logreg.json"
 FUSION_SETS = {
     "all_lgbm":   ["met_nan_lgbm",   "morph_lgbm",   "img"],
     "all_logreg": ["met_nan_logreg", "morph_logreg",  "img"],
+    "mixed":      ["met_nan_logreg", "morph_lgbm",    "img"],  # best-of: LR met + LGBM morph + img
 }
 
 

@@ -730,16 +730,17 @@ def _plot_lgbm_vs_logreg_standalone(combined, days):
 
 
 def _plot_lgbm_vs_logreg_fusion(combined, days):
-    """Compare all_lgbm, all_logreg, and original all3 fusion."""
+    """Compare all_lgbm, all_logreg, mixed, and original all3 fusion."""
     specs = [
-        ("all_lgbm",                    "Fusion LGBM",     "#1f77b4", "D", "-",  2.5),
-        ("all_logreg",                  "Fusion LogReg",   "#d62728", "P", "-",  2.5),
-        ("met_nan+morph+img_mean_prob", "All3 (orig)",     "#7f7f7f", "o", "--", 1.5),
-        ("met_nan",                     "Met LGBM",        "#2ca02c", "^", ":",  1.5),
-        ("morph",                       "Morph LGBM",      "#9467bd", "s", ":",  1.5),
-        ("img",                         "Image",           "#8c564b", "v", ":",  1.5),
+        ("all_lgbm",                    "Fusion LGBM (met_lgbm+morph_lgbm+img)",  "#1f77b4", "D", "-",  2.5),
+        ("all_logreg",                  "Fusion LogReg (met_lr+morph_lr+img)",    "#d62728", "P", "-",  2.5),
+        ("mixed",                       "Mixed (met_lr+morph_lgbm+img)",          "#e377c2", "X", "-",  2.5),
+        ("met_nan+morph+img_mean_prob", "All3 orig (LGBM)",                       "#7f7f7f", "o", "--", 1.5),
+        ("met_nan",                     "Met LGBM",   "#2ca02c", "^", ":", 1.5),
+        ("morph",                       "Morph LGBM", "#9467bd", "s", ":", 1.5),
+        ("img",                         "Image",      "#8c564b", "v", ":", 1.5),
     ]
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(13, 5))
     for k, label, color, marker, ls, lw in specs:
         xs, ys, lo, hi = _series(combined, days, k)
         if xs:
@@ -749,7 +750,7 @@ def _plot_lgbm_vs_logreg_fusion(combined, days):
     _style_ax(ax, days)
     ax.set_ylabel("Balanced Accuracy (mean ± 1 SD)", fontsize=10)
     ax.set_xlabel("Day", fontsize=10)
-    ax.set_title("LGBM vs LogReg Fusion: met+morph+img mean prob  (10×4-fold CV, n=140)",
+    ax.set_title("Fusion Comparison: LGBM vs LogReg vs Mixed  (10×4-fold CV, n=140)",
                  fontsize=12, fontweight="bold")
     ax.legend(fontsize=9, loc="upper left", ncol=2)
     plt.tight_layout()
