@@ -734,7 +734,8 @@ def _plot_lgbm_vs_logreg_fusion(combined, days):
     specs = [
         ("all_lgbm",                    "Fusion LGBM (met_lgbm+morph_lgbm+img)",  "#1f77b4", "D", "-",  2.5),
         ("all_logreg",                  "Fusion LogReg (met_lr+morph_lr+img)",    "#d62728", "P", "-",  2.5),
-        ("mixed",                       "Mixed (met_lr+morph_lgbm+img)",          "#e377c2", "X", "-",  2.5),
+        ("mixed",                       "Mixed-A (met_lr+morph_lgbm+img)",        "#e377c2", "X", "-",  2.5),
+        ("mixed2",                      "Mixed-B (met_lgbm+morph_lr+img)",        "#ff7f0e", "*", "-",  2.5),
         ("met_nan+morph+img_mean_prob", "All3 orig (LGBM)",                       "#7f7f7f", "o", "--", 1.5),
         ("met_nan",                     "Met LGBM",   "#2ca02c", "^", ":", 1.5),
         ("morph",                       "Morph LGBM", "#9467bd", "s", ":", 1.5),
@@ -750,7 +751,7 @@ def _plot_lgbm_vs_logreg_fusion(combined, days):
     _style_ax(ax, days)
     ax.set_ylabel("Balanced Accuracy (mean ± 1 SD)", fontsize=10)
     ax.set_xlabel("Day", fontsize=10)
-    ax.set_title("Fusion Comparison: LGBM vs LogReg vs Mixed  (10×4-fold CV, n=140)",
+    ax.set_title("Fusion Comparison: LGBM vs LogReg vs Mixed-A vs Mixed-B  (10×4-fold CV, n=140)",
                  fontsize=12, fontweight="bold")
     ax.legend(fontsize=9, loc="upper left", ncol=2)
     plt.tight_layout()
