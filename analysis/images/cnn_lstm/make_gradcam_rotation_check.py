@@ -175,6 +175,12 @@ def main():
         choices=["none", "Acceptable", "Not Acceptable"],
     )
     parser.add_argument("--image-type", default="clipped", choices=["clipped", "std"])
+    parser.add_argument("--model-subdir", default="base_effnet",
+                        help="Checkpoint folder under run_dir/label/ (e.g. base_effnet, "
+                             "base_effnet_strongaug, base_effnet_kfold_strongaug).")
+    parser.add_argument("--fold", type=int, default=None,
+                        help="For k-fold runs (train_base_model_kfold.py --save-models): load "
+                             "day_<d>/fold_<k>/ and check only that fold's held-out organoids.")
     parser.add_argument("--run-dir", type=Path,
                         default=Path("/net/projects2/promega/project_data/model_tests/lstm_runs"))
     parser.add_argument("--cohorts-dir", type=Path, default=Path("data/cohorts"))
@@ -185,22 +191,32 @@ def main():
     label = args.label
     day_str = f"{args.day:g}"
 
-    ckpt_path  = args.run_dir / label / "base_effnet" / f"day_{day_str}" / f"model_day_{day_str}.pth"
-    test_json  = args.cohorts_dir / label / "series" / "test.json"
+    day_dir    = args.run_dir / label / args.model_subdir / f"day_{day_str}"
+    if args.fold is not None:
+        day_dir = day_dir / f"fold_{args.fold}"
+    ckpt_path  = day_dir / f"model_day_{day_str}.pth"
+    series_dir = args.cohorts_dir / label / "series"
     misses_csv = args.plots_dir / f"misses_{label}.csv"
 
-    out_dir = args.plots_dir / f"gradcam_rotation_{label}_Dy{day_str}_{args.selection_mode}"
+    # Default model keeps the original folder name so older runs line up.
+    model_tag = "" if args.model_subdir == "base_effnet" else f"_{args.model_subdir}"
+    fold_tag = "" if args.fold is None else f"_fold{args.fold}"
+    out_dir = args.plots_dir / (
+        f"gradcam_rotation_{label}{model_tag}{fold_tag}_Dy{day_str}_{args.selection_mode}"
+    )
     if args.filter_label != "none":
-        out_dir = args.plots_dir / (
-            f"gradcam_rotation_{label}_Dy{day_str}_{args.selection_mode}"
-            f"_{args.filter_label.replace(' ', '_')}"
-        )
+        out_dir = out_dir.with_name(f"{out_dir.name}_{args.filter_label.replace(' ', '_')}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[info] label = {label} | day = {day_str} | mode = {args.selection_mode}")
     print(f"[info] checkpoint = {ckpt_path}")
     print(f"[info] out dir = {out_dir}")
-    for p in (ckpt_path, test_json, misses_csv):
+    required = [ckpt_path]
+    if args.fold is None:
+        required += [series_dir / "test.json", misses_csv]
+    else:
+        required += [day_dir / "test_ids.json"] + [series_dir / f"{p}.json" for p in ("train", "val", "test")]
+    for p in required:
         if not p.exists():
             raise FileNotFoundError(p)
 
@@ -271,8 +287,25 @@ def main():
             cam = cam / cam.max()
         return cam, prob_accept
 
-    test_data = load_json(test_json)
-    misses = pd.read_csv(misses_csv)
+    if args.fold is None:
+        test_data = load_json(series_dir / "test.json")
+        misses = pd.read_csv(misses_csv)
+    else:
+        # k-fold pooled train+val+test, so a fold's held-out ids can come from any split.
+        test_data = {}
+        for phase in ("train", "val", "test"):
+            test_data.update(load_json(series_dir / f"{phase}.json"))
+        rows = []
+        for oid in load_json(day_dir / "test_ids.json"):
+            rec = test_data.get(oid)
+            if rec is None:
+                print(f"[warn] held-out organoid not in cohort JSONs: {oid}"); continue
+            rows.append({"organoid_id": oid, "true_label": rec.get("label"),
+                         "n_votes_good": rec.get("n_votes_good", 0) or 0,
+                         "n_votes_total": rec.get("n_votes_total", 0) or 0,
+                         "miss_rate": 0.0, "total_misses": 0})
+        misses = pd.DataFrame(rows)
+        print(f"[info] fold {args.fold}: {len(misses)} held-out organoids")
 
     # -------- Confidence pre-pass --------
     @torch.no_grad()

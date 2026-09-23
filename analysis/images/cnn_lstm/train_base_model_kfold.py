@@ -19,7 +19,7 @@ on the base well) so daughter organoids never straddle folds (leakage-safe).
         --output-dir .../base_effnet_kfold_strongaug
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, csv, json, sys
 from pathlib import Path
 
 import numpy as np
@@ -124,7 +124,8 @@ def run_day(day, ids, meta, device, args):
     skf = StratifiedGroupKFold(n_splits=args.n_folds, shuffle=True, random_state=SEED)
     train_tf = _make_train_tf(day, args.strong_aug)
     eval_tf = T.Compose([T.Resize(TARGET_SIZE)])
-    oof, fold_bal = {}, []
+    oof, oof_fold, fold_bal = {}, {}, []
+    day_dir = args.output_dir / f"day_{day}"
     for fi, (tr_idx, te_idx) in enumerate(skf.split(ids, y, groups)):
         set_seed(SEED + fi)
         tr = [ids[i] for i in tr_idx]; te = [ids[i] for i in te_idx]
@@ -146,6 +147,17 @@ def run_day(day, ids, meta, device, args):
         model = _train_one(train_ds, val_ds, device, pw, args.select)
         preds = _predict(model, test_ds, device)
         oof.update(preds)
+        oof_fold.update({oid: fi + 1 for oid in preds})
+        if args.save_models:
+            # fold_<k>/ holds the fold's model + the held-out ids it never trained on,
+            # so Grad-CAM (make_gradcam_rotation_check.py --fold k) stays leakage-free.
+            fold_dir = day_dir / f"fold_{fi + 1}"
+            fold_dir.mkdir(parents=True, exist_ok=True)
+            torch.save({"state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+                        "target_day": day, "fold": fi + 1, "strong_aug": args.strong_aug},
+                       fold_dir / f"model_day_{day}.pth")
+            with open(fold_dir / "test_ids.json", "w") as f:
+                json.dump(sorted(preds), f, indent=2)
         yy = [v[1] for v in preds.values()]; pp = [1 if v[0] > 0.5 else 0 for v in preds.values()]
         if len(set(yy)) > 1:
             fold_bal.append(balanced_accuracy_score(yy, pp))
@@ -156,6 +168,13 @@ def run_day(day, ids, meta, device, args):
               f"bal_acc={fold_bal[-1]:.3f}" if fold_bal else f"  day {day} fold {fi+1}: (single-class fold)")
     if not oof:
         return None
+    # Per-organoid OOF probabilities, so thresholds can be re-tuned later without retraining.
+    day_dir.mkdir(parents=True, exist_ok=True)
+    with open(day_dir / "oof_predictions.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["day", "fold", "organoid_id", "true_label", "prob_acceptable"])
+        for oid in sorted(oof):
+            w.writerow([day, oof_fold[oid], oid, oof[oid][1], f"{oof[oid][0]:.6f}"])
     yy = [v[1] for v in oof.values()]; probs = [v[0] for v in oof.values()]
     pp = [1 if p > 0.5 else 0 for p in probs]
     res = {
@@ -182,7 +201,18 @@ def main():
     ap.add_argument("--pos-weight-scale", type=float, default=1.0)
     ap.add_argument("--select", default="bal", choices=["bal", "acc"],
                     help="Inner-val checkpoint metric: bal (balanced acc, default) or acc.")
+    ap.add_argument("--save-models", action="store_true",
+                    help="Save each fold's model + held-out ids to day_<d>/fold_<k>/ "
+                         "(needed for Grad-CAM on CV models; ~5 checkpoints per day).")
+    ap.add_argument("--days", default=None,
+                    help="Comma-separated subset of days to run (e.g. 24,30). Default: all.")
     args = ap.parse_args()
+    days = DAY_RANGES
+    if args.days:
+        wanted = {float(d) for d in args.days.split(",") if d.strip()}
+        days = [d for d in DAY_RANGES if float(d) in wanted]
+        if len(days) != len(wanted):
+            raise SystemExit(f"--days {args.days}: valid days are {DAY_RANGES}")
     if args.strong_aug and args.image_type != "clipped":
         print("[warn] --strong-aug fill=178 assumes --image-type clipped")
 
@@ -204,7 +234,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out = args.output_dir / "baseline_kfold_results.json"
     results = {}
-    for day in DAY_RANGES:
+    for day in days:
         print(f"\n{'='*60}\nDAY {day} — {args.n_folds}-fold CV\n{'='*60}")
         r = run_day(day, ids, meta, device, args)
         if r:
@@ -214,7 +244,7 @@ def main():
             json.dump(results, f, indent=2)
     print(f"\nSaved {out}")
     print(f"\n{'day':>6} {'OOF bal':>8} {'fold mean±std':>16} {'AUC':>6}")
-    for day in DAY_RANGES:
+    for day in days:
         r = results.get(str(day))
         if r:
             print(f"{day:>6} {r['balanced_accuracy']:>8.3f} "
