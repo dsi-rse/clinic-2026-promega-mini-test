@@ -57,7 +57,7 @@ N_REPEATS = 10
 ALL_DATA_PATH = "data/all_data.json"
 OUTPUT_PATH          = ANALYSIS_OUTPUT_DIR / "images" / "met_lgbm_logreg_kfold_139.json"
 OUTPUT_PATH_NAN_RAW  = ANALYSIS_OUTPUT_DIR / "images" / "met_lgbm_logreg_kfold_nan_raw.json"
-OUTPUT_PATH_ALL      = ANALYSIS_OUTPUT_DIR / "images" / "met_morph_lgbm_logreg_kfold.json"
+OUTPUT_PATH_ALL      = ANALYSIS_OUTPUT_DIR / "images" / "met_morph_lgbm_logreg_kfold_134.json"
 
 LGBM_PARAM_GRID = {
     "max_depth":         [3, 6],
@@ -220,7 +220,7 @@ def main():
 
     ds = OrganoidDataset(
         ALL_DATA_PATH, splits=None,
-        filters=[*idor_ba1_ba2_filters(), require_complete_series(drop_stitched=False)],
+        filters=[*idor_ba1_ba2_filters(), require_complete_series(drop_stitched=True)],
     )
     all_org_ids = [o for o in ds.organoid_ids if ds.organoid_label(o) in LABEL_TO_INT]
     all_labels  = np.array([LABEL_TO_INT[ds.organoid_label(o)] for o in all_org_ids])
