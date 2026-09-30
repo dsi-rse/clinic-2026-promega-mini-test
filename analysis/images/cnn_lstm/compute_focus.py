@@ -26,7 +26,7 @@ Examples:
         --split-label idor_balsel --day 30 --bbox-crop --out focus_bbox.csv
 """
 from __future__ import annotations
-import argparse, csv, sys
+import argparse, csv, json, sys
 from pathlib import Path
 
 import numpy as np
@@ -61,13 +61,14 @@ def load_mask(mask_path, hw):
     return (a > (0.5 * a.max() if a.max() > 0 else 0.5)).astype(np.float32)
 
 
-def process_day(day, test_ids, test_meta, args, device):
+def process_day(day, test_ids, test_meta, args, device, ckpt=None):
     """Compute focus/confidence for every test organoid at one day. Returns rows."""
     ds_day = day_str(day)
     eval_tf = T.Compose([T.Resize(TARGET_SIZE)])
     ds = SingleDayOrganoidDataset(test_ids, test_meta, day, transform=eval_tf,
                                   image_type=args.image_type, bbox_crop=args.bbox_crop)
-    ckpt = args.runs_root / args.label / args.model_subdir / f"day_{ds_day}" / f"model_day_{ds_day}.pth"
+    if ckpt is None:
+        ckpt = args.runs_root / args.label / args.model_subdir / f"day_{ds_day}" / f"model_day_{ds_day}.pth"
     if not ckpt.exists():
         print(f"  [skip] no checkpoint for day {day}: {ckpt}")
         return [], 0
@@ -122,6 +123,26 @@ def process_day(day, test_ids, test_meta, args, device):
     return rows, n_nomask
 
 
+def process_day_kfold(day, meta, args, device):
+    """K-fold models (train_base_model_kfold.py --save-models): score each fold's
+    held-out organoids with that fold's model, so every organoid is out-of-fold."""
+    rep_dir = args.runs_root / args.label / args.model_subdir / f"day_{day_str(day)}" / f"rep_{args.repeat}"
+    fold_dirs = sorted(rep_dir.glob("fold_*"))
+    if not fold_dirs:
+        print(f"  [skip] no fold models for day {day}: {rep_dir}")
+        return [], 0
+    rows, n_nomask = [], 0
+    for fd in fold_dirs:
+        with open(fd / "test_ids.json") as f:
+            ids = json.load(f)
+        r, nn = process_day(day, ids, meta, args, device,
+                            ckpt=fd / f"model_day_{day_str(day)}.pth")
+        for row in r:
+            row["fold"] = int(fd.name.split("_")[1])
+        rows += r; n_nomask += nn
+    return rows, n_nomask
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True)
@@ -140,18 +161,32 @@ def main():
     ap.add_argument("--bbox-crop", action="store_true",
                     help="Crop to mask bbox + letterbox (size removed). focus/enrichment "
                          "meaningless under bbox; only prob/confidence/correct are valid.")
+    ap.add_argument("--kfold", action="store_true",
+                    help="Use k-fold models (day_<d>/rep_<r>/fold_<k>/): each organoid is "
+                         "scored by the fold model that held it out. Adds a 'fold' column.")
+    ap.add_argument("--repeat", type=int, default=1, help="CV repeat to use with --kfold.")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     split_label = args.split_label or args.label
-    test_json = args.cohorts_dir / split_label / "series" / "test.json"
-    test_ids, test_meta = load_split_from_json(test_json)
+    if args.kfold:
+        # k-fold pooled train+val+test, so held-out ids can come from any split.
+        test_ids, test_meta = [], {}
+        for phase in ("train", "val", "test"):
+            i, m = load_split_from_json(args.cohorts_dir / split_label / "series" / f"{phase}.json")
+            test_ids += i; test_meta.update(m)
+    else:
+        test_json = args.cohorts_dir / split_label / "series" / "test.json"
+        test_ids, test_meta = load_split_from_json(test_json)
 
     days = list(DAY_RANGES) if args.all_days else [args.day]
     all_rows = []
     for day in days:
-        rows, nn = process_day(day, test_ids, test_meta, args, device)
+        if args.kfold:
+            rows, nn = process_day_kfold(day, test_meta, args, device)
+        else:
+            rows, nn = process_day(day, test_ids, test_meta, args, device)
         all_rows += rows
         if rows:
             fs = [r["enrichment"] for r in rows if r["enrichment"] == r["enrichment"]]
