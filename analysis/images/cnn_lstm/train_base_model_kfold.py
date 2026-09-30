@@ -321,7 +321,10 @@ def main():
           + (f"   saving models for repeats {sorted(args.save_model_repeats)}" if args.save_models else ""))
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    out = args.output_dir / "baseline_kfold_results.json"
+    # --days runs (e.g. one Slurm array task per day) get their own results file so
+    # parallel tasks sharing an output dir don't overwrite each other.
+    out = args.output_dir / ("baseline_kfold_results.json" if not args.days else
+                             f"baseline_kfold_results_days_{args.days.replace(',', '_')}.json")
     results = {}
     for day in days:
         print(f"\n{'='*60}\nDAY {day} — {args.n_folds}-fold CV\n{'='*60}")
