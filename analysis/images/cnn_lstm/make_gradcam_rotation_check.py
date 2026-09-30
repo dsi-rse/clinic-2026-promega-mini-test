@@ -375,8 +375,15 @@ def main():
             cam, p = make_gradcam(x)
             probs_at_angle.append(p)
             cams_rotated_frame.append(cam)
-            # Counter-rotate the CAM back to the original frame
-            cam_back = np.rot90(cam, k=-k).copy()
+            # The CAM is at the model's (384, 512) input size, which is not square,
+            # so bring it back to the rotated image's native size BEFORE
+            # counter-rotating; otherwise a 90/270° CAM comes back as 512x384 and
+            # is compared pixel-misaligned against the 384x512 0° CAM.
+            cam_native = np.asarray(
+                Image.fromarray((cam * 255).astype(np.uint8)).resize(
+                    (rot_img.shape[1], rot_img.shape[0]), Image.BILINEAR),
+                dtype=np.float32) / 255.0
+            cam_back = np.rot90(cam_native, k=-k).copy()
             cams_unrotated_frame.append(cam_back)
 
         # Rotation consistency: cosine sim of each rotated-back CAM vs the 0° one
@@ -427,6 +434,9 @@ def main():
             "pred_correct": bool(row.get("pred_correct", False)),
             "confidence": float(row["confidence"]),
             "rotation_consistency": consistency,
+            "consistency_90deg": sims[0],
+            "consistency_180deg": sims[1],
+            "consistency_270deg": sims[2],
         })
 
     # Save summary CSV
