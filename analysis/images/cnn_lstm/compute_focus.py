@@ -43,6 +43,9 @@ from analysis.images.cnn_lstm.organoid_dataset import load_split_from_json
 from torchvision import transforms as T
 
 
+EDGE_BAND = 0.10  # outer fraction of H and W (each side) counted as the image edge
+
+
 def find_last_conv(model):
     last = None
     for m in model.modules():
@@ -108,6 +111,18 @@ def process_day(day, test_ids, test_meta, args, device, ckpt=None):
         focus = float((cam * mask).sum() / denom) if denom > 0 else float("nan")
         mask_frac = float(mask.mean())
         enrichment = float(focus / mask_frac) if mask_frac > 0 else float("nan")
+        # Where the rest of the heat goes: an outer border band of the frame
+        # (EDGE_BAND of H and W on each side, organoid pixels excluded) vs the
+        # remaining background. Border heat is rotation-symmetric, so the
+        # rotation check cannot flag it.
+        H, W = TARGET_SIZE; bh, bw = int(round(EDGE_BAND * H)), int(round(EDGE_BAND * W))
+        band = np.zeros((H, W), dtype=np.float32)
+        band[:bh, :] = band[-bh:, :] = 1; band[:, :bw] = band[:, -bw:] = 1
+        edge = band * (1 - mask)
+        edge_heat = float((cam * edge).sum() / denom) if denom > 0 else float("nan")
+        edge_area = float(edge.mean())
+        other_heat = 1.0 - focus - edge_heat if denom > 0 else float("nan")
+        other_area = 1.0 - mask_frac - edge_area
         lab = int(label.item()) if hasattr(label, "item") else int(label)
         pred = int(prob > 0.5)
         rows.append({
@@ -118,6 +133,10 @@ def process_day(day, test_ids, test_meta, args, device, ckpt=None):
             "correct": int(pred == lab), "confidence": round(abs(prob - 0.5), 4),
             "focus": round(focus, 4), "mask_frac": round(mask_frac, 4),
             "enrichment": round(enrichment, 3),
+            "edge_heat": round(edge_heat, 4), "edge_area": round(edge_area, 4),
+            "edge_enrichment": round(edge_heat / edge_area, 3) if edge_area > 0 else float("nan"),
+            "other_heat": round(other_heat, 4), "other_area": round(other_area, 4),
+            "other_enrichment": round(other_heat / other_area, 3) if other_area > 0 else float("nan"),
         })
     h.remove()
     return rows, n_nomask
