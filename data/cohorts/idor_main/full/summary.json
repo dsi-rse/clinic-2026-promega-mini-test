@@ -1,0 +1,26 @@
+{
+  "counts_by_partition": {
+    "train": 142,
+    "val": 16,
+    "test": 40
+  },
+  "wells_by_partition": {
+    "train": 142,
+    "val": 16,
+    "test": 40
+  },
+  "label_counts_by_partition": {
+    "train": {
+      "Acceptable": 119,
+      "Not Acceptable": 23
+    },
+    "val": {
+      "Acceptable": 13,
+      "Not Acceptable": 3
+    },
+    "test": {
+      "Acceptable": 33,
+      "Not Acceptable": 7
+    }
+  }
+}

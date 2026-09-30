@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-train_base_model_kfold.py — 5-fold CV version of the single-image baseline.
+train_base_model_kfold.py — (repeated) K-fold CV version of the single-image baseline.
 
 Faithful to the coworker's evaluation approach: instead of one train/val/test
 split, pool all organoids and run K-fold cross-validation per day. Each fold
@@ -11,12 +11,17 @@ noise that collapsed the strong-aug run.
 
 Reuses the model, dataset, training loop, and augmentation from train_base_model
 unchanged — only the CV scaffold is new. Folds are well-grouped (StratifiedGroupKFold
-on the base well) so daughter organoids never straddle folds (leakage-safe).
+on the base well) so daughter organoids never straddle folds (leakage-safe); when
+every well has a single organoid, plain StratifiedKFold is used for tighter class balance.
+
+With --n-repeats R the whole K-fold CV is re-run R times with reshuffled folds
+(seed SEED + r*1000, as in combined_kfold.py); per-day metrics are mean±std over
+repeats, and oof_predictions.csv keeps every repeat's per-organoid probabilities.
 
     python analysis/images/cnn_lstm/train_base_model_kfold.py \\
-        --image-type clipped --strong-aug --n-folds 5 \\
-        --splits-dir data/cohorts/idor_balsel/series \\
-        --output-dir .../base_effnet_kfold_strongaug
+        --image-type clipped --strong-aug --n-folds 4 --n-repeats 10 \\
+        --splits-dir data/cohorts/idor_main/series \\
+        --output-dir .../base_effnet_kfold4x10_strongaug
 """
 from __future__ import annotations
 import argparse, csv, json, sys
@@ -28,7 +33,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import transforms as T
-from sklearn.model_selection import StratifiedGroupKFold, StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold, StratifiedShuffleSplit
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -115,83 +120,148 @@ def _predict(model, ds, device):
     return out
 
 
+def _load_folds_file(path, ids):
+    """Per-repeat fold assignments: JSON list with one {organoid_id: fold} dict per repeat.
+
+    Ids may be in any spelling of the base well ("BA1 96_1 A2", "BA1_96_1_A2_nosplit");
+    they are matched to the cohort by base well. Every cohort organoid must be assigned.
+    """
+    with open(path) as f:
+        reps = json.load(f)
+    by_well = {_well(o): o for o in ids}
+    out = []
+    for r, assign in enumerate(reps):
+        m = {by_well[_well(k.replace(" ", "_"))]: int(v) for k, v in assign.items()
+             if _well(k.replace(" ", "_")) in by_well}
+        missing = [o for o in ids if o not in m]
+        if missing:
+            raise SystemExit(f"--folds-file repeat {r + 1}: {len(missing)} cohort organoids "
+                             f"unassigned, e.g. {missing[:5]}")
+        out.append(m)
+    return out
+
+
+def _fold_splits(ids, y, groups, n_folds, rep, folds_from_file):
+    """(train_idx, test_idx) per fold for one repeat. Repeat r reshuffles with seed
+    SEED + r*1000 (same scheme as combined_kfold.py)."""
+    if folds_from_file is not None:
+        assign = folds_from_file[rep]
+        fold_of = np.array([assign[o] for o in ids])
+        return [(np.where(fold_of != k)[0], np.where(fold_of == k)[0])
+                for k in sorted(set(fold_of))]
+    seed = SEED + rep * 1000
+    if len(set(groups)) == len(ids):
+        # One organoid per well: nothing to keep together, and StratifiedGroupKFold
+        # stratifies poorly with singleton groups (Not-Acceptable per fold 3..8), so
+        # use plain StratifiedKFold (also what combined_kfold.py uses).
+        return list(StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed).split(ids, y))
+    skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    return list(skf.split(ids, y, groups))
+
+
 def run_day(day, ids, meta, device, args):
     y = np.array([_label(meta, o) for o in ids])
     groups = np.array([_well(o) for o in ids])
     if len(np.unique(y)) < 2 or np.bincount(y).min() < args.n_folds:
         print(f"  day {day}: too few of a class for {args.n_folds}-fold, skipping")
         return None
-    skf = StratifiedGroupKFold(n_splits=args.n_folds, shuffle=True, random_state=SEED)
     train_tf = _make_train_tf(day, args.strong_aug)
     eval_tf = T.Compose([T.Resize(TARGET_SIZE)])
-    oof, oof_fold, fold_bal = {}, {}, []
     day_dir = args.output_dir / f"day_{day}"
-    for fi, (tr_idx, te_idx) in enumerate(skf.split(ids, y, groups)):
-        set_seed(SEED + fi)
-        tr = [ids[i] for i in tr_idx]; te = [ids[i] for i in te_idx]
-        tr_y = [_label(meta, o) for o in tr]
-        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.15, random_state=SEED + fi)
-        it_idx, iv_idx = next(sss.split(tr, tr_y))
-        itr = [tr[i] for i in it_idx]; iv = [tr[i] for i in iv_idx]
-        train_ds = SingleDayOrganoidDataset(itr, meta, day, transform=train_tf,
-                                            image_type=args.image_type, bbox_crop=args.bbox_crop)
-        val_ds = SingleDayOrganoidDataset(iv, meta, day, transform=eval_tf,
-                                          image_type=args.image_type, bbox_crop=args.bbox_crop)
-        test_ds = SingleDayOrganoidDataset(te, meta, day, transform=eval_tf,
-                                           image_type=args.image_type, bbox_crop=args.bbox_crop)
-        if len(train_ds) == 0 or len(test_ds) == 0:
+    oof_rows, rep_bal, rep_auc, fold_bal = [], [], [], []
+    prob_sum, prob_n, true_of = {}, {}, {}
+    for rep in range(args.n_repeats):
+        rep_seed = SEED + rep * 1000
+        oof, oof_fold = {}, {}
+        for fi, (tr_idx, te_idx) in enumerate(
+                _fold_splits(ids, y, groups, args.n_folds, rep, args.folds_from_file)):
+            _run_fold(day, rep, fi, rep_seed, ids, tr_idx, te_idx, meta, train_tf, eval_tf,
+                      device, args, day_dir, oof, oof_fold, fold_bal)
+        if not oof:
             continue
-        tl_labels = [s["label"] for s in train_ds.samples]
-        ng = max(sum(tl_labels), 1); nb = max(len(tl_labels) - sum(tl_labels), 1)
-        pw = torch.tensor([(nb / ng) * args.pos_weight_scale], device=device)
-        model = _train_one(train_ds, val_ds, device, pw, args.select)
-        preds = _predict(model, test_ds, device)
-        oof.update(preds)
-        oof_fold.update({oid: fi + 1 for oid in preds})
-        if args.save_models:
-            # fold_<k>/ holds the fold's model + the held-out ids it never trained on,
-            # so Grad-CAM (make_gradcam_rotation_check.py --fold k) stays leakage-free.
-            fold_dir = day_dir / f"fold_{fi + 1}"
-            fold_dir.mkdir(parents=True, exist_ok=True)
-            torch.save({"state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
-                        "target_day": day, "fold": fi + 1, "strong_aug": args.strong_aug},
-                       fold_dir / f"model_day_{day}.pth")
-            with open(fold_dir / "test_ids.json", "w") as f:
-                json.dump(sorted(preds), f, indent=2)
-        yy = [v[1] for v in preds.values()]; pp = [1 if v[0] > 0.5 else 0 for v in preds.values()]
+        yy = [v[1] for v in oof.values()]; probs = [v[0] for v in oof.values()]
+        rep_bal.append(balanced_accuracy_score(yy, [1 if p > 0.5 else 0 for p in probs]))
         if len(set(yy)) > 1:
-            fold_bal.append(balanced_accuracy_score(yy, pp))
-        del model
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
-        print(f"  day {day} fold {fi+1}/{args.n_folds}: test n={len(preds)} "
-              f"bal_acc={fold_bal[-1]:.3f}" if fold_bal else f"  day {day} fold {fi+1}: (single-class fold)")
-    if not oof:
+            rep_auc.append(roc_auc_score(yy, probs))
+        for oid, (p, lab) in oof.items():
+            oof_rows.append([day, rep + 1, oof_fold[oid], oid, lab, f"{p:.6f}"])
+            prob_sum[oid] = prob_sum.get(oid, 0.0) + p
+            prob_n[oid] = prob_n.get(oid, 0) + 1
+            true_of[oid] = lab
+        print(f"  day {day} repeat {rep + 1}/{args.n_repeats}: OOF bal_acc {rep_bal[-1]:.3f}")
+    if not oof_rows:
         return None
-    # Per-organoid OOF probabilities, so thresholds can be re-tuned later without retraining.
+    # Per-organoid OOF probabilities (every repeat), so thresholds can be re-tuned
+    # later without retraining.
     day_dir.mkdir(parents=True, exist_ok=True)
     with open(day_dir / "oof_predictions.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["day", "fold", "organoid_id", "true_label", "prob_acceptable"])
-        for oid in sorted(oof):
-            w.writerow([day, oof_fold[oid], oid, oof[oid][1], f"{oof[oid][0]:.6f}"])
-    yy = [v[1] for v in oof.values()]; probs = [v[0] for v in oof.values()]
-    pp = [1 if p > 0.5 else 0 for p in probs]
+        w.writerow(["day", "repeat", "fold", "organoid_id", "true_label", "prob_acceptable"])
+        w.writerows(sorted(oof_rows, key=lambda r: (r[1], r[3])))
+    # Mean probability across repeats per organoid (the "smoothed" prediction).
+    mo = sorted(prob_sum)
+    mp = [prob_sum[o] / prob_n[o] for o in mo]; my = [true_of[o] for o in mo]
     res = {
-        "balanced_accuracy": float(balanced_accuracy_score(yy, pp)),
+        "balanced_accuracy": float(np.mean(rep_bal)),          # mean over repeats
+        "balanced_accuracy_repeat_std": float(np.std(rep_bal)),
         "balanced_accuracy_mean": float(np.mean(fold_bal)) if fold_bal else float("nan"),
         "balanced_accuracy_std": float(np.std(fold_bal)) if fold_bal else float("nan"),
-        "roc_auc": float(roc_auc_score(yy, probs)) if len(set(yy)) > 1 else float("nan"),
-        "n": len(oof), "n_folds": len(fold_bal),
+        "roc_auc": float(np.mean(rep_auc)) if rep_auc else float("nan"),
+        "roc_auc_repeat_std": float(np.std(rep_auc)) if rep_auc else float("nan"),
+        "balanced_accuracy_meanprob": float(balanced_accuracy_score(my, [1 if p > 0.5 else 0 for p in mp])),
+        "n": len(mo), "n_folds": args.n_folds, "n_repeats": len(rep_bal),
     }
-    print(f"  day {day}: OOF bal_acc {res['balanced_accuracy']:.3f}  "
-          f"fold mean {res['balanced_accuracy_mean']:.3f}±{res['balanced_accuracy_std']:.3f}  "
-          f"AUC {res['roc_auc']:.3f}  (n={res['n']})")
+    print(f"  day {day}: bal_acc {res['balanced_accuracy']:.3f}±{res['balanced_accuracy_repeat_std']:.3f} "
+          f"over {res['n_repeats']} repeats  AUC {res['roc_auc']:.3f}  "
+          f"(fold mean {res['balanced_accuracy_mean']:.3f}±{res['balanced_accuracy_std']:.3f}, n={res['n']})")
     return res
 
 
+def _run_fold(day, rep, fi, rep_seed, ids, tr_idx, te_idx, meta, train_tf, eval_tf,
+              device, args, day_dir, oof, oof_fold, fold_bal):
+    set_seed(rep_seed + fi)
+    tr = [ids[i] for i in tr_idx]; te = [ids[i] for i in te_idx]
+    tr_y = [_label(meta, o) for o in tr]
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.15, random_state=rep_seed + fi)
+    it_idx, iv_idx = next(sss.split(tr, tr_y))
+    itr = [tr[i] for i in it_idx]; iv = [tr[i] for i in iv_idx]
+    train_ds = SingleDayOrganoidDataset(itr, meta, day, transform=train_tf,
+                                        image_type=args.image_type, bbox_crop=args.bbox_crop)
+    val_ds = SingleDayOrganoidDataset(iv, meta, day, transform=eval_tf,
+                                      image_type=args.image_type, bbox_crop=args.bbox_crop)
+    test_ds = SingleDayOrganoidDataset(te, meta, day, transform=eval_tf,
+                                       image_type=args.image_type, bbox_crop=args.bbox_crop)
+    if len(train_ds) == 0 or len(test_ds) == 0:
+        return
+    tl_labels = [s["label"] for s in train_ds.samples]
+    ng = max(sum(tl_labels), 1); nb = max(len(tl_labels) - sum(tl_labels), 1)
+    pw = torch.tensor([(nb / ng) * args.pos_weight_scale], device=device)
+    model = _train_one(train_ds, val_ds, device, pw, args.select)
+    preds = _predict(model, test_ds, device)
+    oof.update(preds)
+    oof_fold.update({oid: fi + 1 for oid in preds})
+    if args.save_models and (rep + 1) in args.save_model_repeats:
+        # rep_<r>/fold_<k>/ holds the fold's model + the held-out ids it never trained on,
+        # so Grad-CAM (make_gradcam_rotation_check.py --repeat r --fold k) stays leakage-free.
+        fold_dir = day_dir / f"rep_{rep + 1}" / f"fold_{fi + 1}"
+        fold_dir.mkdir(parents=True, exist_ok=True)
+        torch.save({"state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+                    "target_day": day, "repeat": rep + 1, "fold": fi + 1,
+                    "strong_aug": args.strong_aug},
+                   fold_dir / f"model_day_{day}.pth")
+        with open(fold_dir / "test_ids.json", "w") as f:
+            json.dump(sorted(preds), f, indent=2)
+    yy = [v[1] for v in preds.values()]; pp = [1 if v[0] > 0.5 else 0 for v in preds.values()]
+    if len(set(yy)) > 1:
+        fold_bal.append(balanced_accuracy_score(yy, pp))
+    del model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    print(f"  day {day} rep {rep + 1} fold {fi + 1}/{args.n_folds}: test n={len(preds)}"
+          + (f" bal_acc={fold_bal[-1]:.3f}" if len(set(yy)) > 1 else " (single-class fold)"))
+
 def main():
-    ap = argparse.ArgumentParser(description="5-fold CV single-image baseline")
+    ap = argparse.ArgumentParser(description="Repeated K-fold CV single-image baseline")
     ap.add_argument("--image-type", default="clipped", choices=["clipped", "std"])
     ap.add_argument("--splits-dir", default="data/cohorts/idor_balsel/series")
     ap.add_argument("--output-dir", type=Path, required=True)
@@ -201,9 +271,17 @@ def main():
     ap.add_argument("--pos-weight-scale", type=float, default=1.0)
     ap.add_argument("--select", default="bal", choices=["bal", "acc"],
                     help="Inner-val checkpoint metric: bal (balanced acc, default) or acc.")
+    ap.add_argument("--n-repeats", type=int, default=1,
+                    help="Repeat the K-fold CV this many times, reshuffling folds each time "
+                         "(seed SEED + r*1000). Metrics are mean±std over repeats.")
+    ap.add_argument("--folds-file", type=Path, default=None,
+                    help="JSON list (one {organoid_id: fold} dict per repeat) to use fixed "
+                         "fold assignments, e.g. a collaborator's. Overrides --n-folds/--n-repeats.")
     ap.add_argument("--save-models", action="store_true",
-                    help="Save each fold's model + held-out ids to day_<d>/fold_<k>/ "
-                         "(needed for Grad-CAM on CV models; ~5 checkpoints per day).")
+                    help="Save each fold's model + held-out ids to day_<d>/rep_<r>/fold_<k>/ "
+                         "(needed for Grad-CAM on CV models).")
+    ap.add_argument("--save-model-repeats", default=None,
+                    help="Comma-separated repeats to save models for (e.g. 1,2). Default: all.")
     ap.add_argument("--days", default=None,
                     help="Comma-separated subset of days to run (e.g. 24,30). Default: all.")
     args = ap.parse_args()
@@ -231,6 +309,17 @@ def main():
     y = [_label(meta, o) for o in ids]
     print(f"Pooled organoids: {len(ids)}  ({sum(y)} Acceptable, {len(y)-sum(y)} Not)")
 
+    args.folds_from_file = None
+    if args.folds_file:
+        args.folds_from_file = _load_folds_file(args.folds_file, ids)
+        args.n_repeats = len(args.folds_from_file)
+        args.n_folds = len(set(args.folds_from_file[0].values()))
+        print(f"Folds from {args.folds_file}: {args.n_repeats} repeats x {args.n_folds} folds")
+    args.save_model_repeats = (set(range(1, args.n_repeats + 1)) if not args.save_model_repeats
+                               else {int(r) for r in args.save_model_repeats.split(",")})
+    print(f"Repeats: {args.n_repeats}   folds: {args.n_folds}"
+          + (f"   saving models for repeats {sorted(args.save_model_repeats)}" if args.save_models else ""))
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
     out = args.output_dir / "baseline_kfold_results.json"
     results = {}
@@ -243,11 +332,11 @@ def main():
         with open(out, "w") as f:
             json.dump(results, f, indent=2)
     print(f"\nSaved {out}")
-    print(f"\n{'day':>6} {'OOF bal':>8} {'fold mean±std':>16} {'AUC':>6}")
+    print(f"\n{'day':>6} {'bal (repeats)':>16} {'fold mean±std':>16} {'AUC':>6}")
     for day in days:
         r = results.get(str(day))
         if r:
-            print(f"{day:>6} {r['balanced_accuracy']:>8.3f} "
+            print(f"{day:>6} {r['balanced_accuracy']:>7.3f}±{r['balanced_accuracy_repeat_std']:<7.3f} "
                   f"{r['balanced_accuracy_mean']:>7.3f}±{r['balanced_accuracy_std']:<7.3f} {r['roc_auc']:>6.3f}")
 
 

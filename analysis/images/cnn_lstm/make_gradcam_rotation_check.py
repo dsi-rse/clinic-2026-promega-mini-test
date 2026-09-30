@@ -180,7 +180,9 @@ def main():
                              "base_effnet_strongaug, base_effnet_kfold_strongaug).")
     parser.add_argument("--fold", type=int, default=None,
                         help="For k-fold runs (train_base_model_kfold.py --save-models): load "
-                             "day_<d>/fold_<k>/ and check only that fold's held-out organoids.")
+                             "day_<d>/rep_<r>/fold_<k>/ and check only that fold's held-out organoids.")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="Which CV repeat's models to use with --fold (default 1).")
     parser.add_argument("--run-dir", type=Path,
                         default=Path("/net/projects2/promega/project_data/model_tests/lstm_runs"))
     parser.add_argument("--cohorts-dir", type=Path, default=Path("data/cohorts"))
@@ -193,14 +195,14 @@ def main():
 
     day_dir    = args.run_dir / label / args.model_subdir / f"day_{day_str}"
     if args.fold is not None:
-        day_dir = day_dir / f"fold_{args.fold}"
+        day_dir = day_dir / f"rep_{args.repeat}" / f"fold_{args.fold}"
     ckpt_path  = day_dir / f"model_day_{day_str}.pth"
     series_dir = args.cohorts_dir / label / "series"
     misses_csv = args.plots_dir / f"misses_{label}.csv"
 
     # Default model keeps the original folder name so older runs line up.
     model_tag = "" if args.model_subdir == "base_effnet" else f"_{args.model_subdir}"
-    fold_tag = "" if args.fold is None else f"_fold{args.fold}"
+    fold_tag = "" if args.fold is None else f"_rep{args.repeat}_fold{args.fold}"
     out_dir = args.plots_dir / (
         f"gradcam_rotation_{label}{model_tag}{fold_tag}_Dy{day_str}_{args.selection_mode}"
     )

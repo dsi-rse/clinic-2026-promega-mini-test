@@ -363,7 +363,8 @@ def require_complete_series(series_list: list) -> list:
 # still label-valid — it just won't have a clean Dy30 image in its timepoints.
 # ============================================================
 
-def build_label_lookup(all_data: dict, min_votes: int = 4) -> dict:
+def build_label_lookup(all_data: dict, min_votes: int = 4,
+                       official_label: bool = False) -> dict:
     """
     Build (base_well, split_type) -> label_obj map from all Dy30 records.
 
@@ -371,6 +372,10 @@ def build_label_lookup(all_data: dict, min_votes: int = 4) -> dict:
     than trusting the upstream `lab['value']` field, which is fixed at a 4/5
     supermajority. With min_votes=4 the behavior matches the original; with
     min_votes=3 borderline 3/2 and 2/3 organoids also receive labels.
+
+    With official_label=True, use the upstream `lab['value']` as-is (the label
+    pipeline.data_loader / OrganoidDataset uses) and drop wells where it is
+    empty, e.g. pooled votes pass 4 but the regular survey alone does not.
     """
     lookup: dict = {}
     for v in all_data.values():
@@ -381,7 +386,11 @@ def build_label_lookup(all_data: dict, min_votes: int = 4) -> dict:
         accept = votes.get("Acceptable", 0)
         reject = votes.get("Not Acceptable", 0)
 
-        if accept >= min_votes and accept > reject:
+        if official_label:
+            computed_value = lab.get("value")
+            if computed_value not in ("Acceptable", "Not Acceptable"):
+                continue
+        elif accept >= min_votes and accept > reject:
             computed_value = "Acceptable"
         elif reject >= min_votes and reject > accept:
             computed_value = "Not Acceptable"
@@ -410,6 +419,7 @@ def _genealogy_to_split_type(gt: str) -> str:
 
 def attach_labels(
     series_list: list, all_data: dict, min_votes: int = 4,
+    official_label: bool = False,
 ) -> tuple[list, int]:
     """
     Attach Dy30 label to each series by looking up all_data directly. Drop
@@ -417,8 +427,10 @@ def attach_labels(
 
     `min_votes` controls how many evaluators on one side are required for a
     well to receive a label. Default 4 = current behavior; 3 = relaxed.
+    `official_label` uses the upstream label value instead (ignores min_votes).
     """
-    lookup = build_label_lookup(all_data, min_votes=min_votes)
+    lookup = build_label_lookup(all_data, min_votes=min_votes,
+                                official_label=official_label)
     labeled: list = []
     dropped = 0
     for s in series_list:
@@ -575,6 +587,7 @@ def write_manifest(
     full_summary: dict,
     series_summary: dict,
     min_majority_votes: int = 4,
+    official_label: bool = False,
 ) -> Path:
     manifest = {
         "created_at_utc":   datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -587,6 +600,7 @@ def write_manifest(
         "expected_days":    EXPECTED_DAYS,
         "label_day":        LABEL_DAY,
         "min_majority_votes": min_majority_votes,
+        "official_label":   official_label,
         "cohort_stats":     cohort_stats,
         "skipped_counts":   skipped_counts,
         "full_summary":     full_summary,
@@ -613,6 +627,12 @@ def main() -> int:
         help=("Minimum votes for one side to win the Dy30 label. Default 4 "
               "(current behavior: requires 4/5 supermajority). Set to 3 to "
               "include borderline 3/2 and 2/3 organoids."),
+    )
+    parser.add_argument(
+        "--official-label", action="store_true",
+        help=("Use the upstream Dy30 label['value'] (what OrganoidDataset uses) "
+              "instead of recomputing from pooled votes. Ignores "
+              "--min-majority-votes."),
     )
     parser.add_argument(
         "--output-suffix", type=str, default="",
@@ -655,10 +675,14 @@ def main() -> int:
     # Labels come from all_data directly (survey-based, independent of Dy30
     # image quality), so an organoid whose Dy30 image fails Stage 1 still keeps
     # its label — it just won't have a clean Dy30 in its timepoints.
-    print(f"          min_majority_votes = {args.min_majority_votes} "
-          f"({'relaxed' if args.min_majority_votes < 4 else 'strict'})")
+    if args.official_label:
+        print("          label source = official label['value'] (min_majority_votes ignored)")
+    else:
+        print(f"          min_majority_votes = {args.min_majority_votes} "
+              f"({'relaxed' if args.min_majority_votes < 4 else 'strict'})")
     labeled_full, dropped_full = attach_labels(
         all_series, all_data, min_votes=args.min_majority_votes,
+        official_label=args.official_label,
     )
     labeled_series = [s for s in labeled_full if not s["missing_days"]]
     print(f"          full labeled:   {len(labeled_full)} (dropped no-label: {dropped_full})")
@@ -689,6 +713,7 @@ def main() -> int:
         full_summary=full_summary,
         series_summary=series_summary,
         min_majority_votes=args.min_majority_votes,
+        official_label=args.official_label,
     )
     print(f"[done]    manifest: {manifest_path}")
     return 0
