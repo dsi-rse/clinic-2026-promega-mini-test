@@ -14,6 +14,10 @@ For each organoid, re-scores the k-fold base model (train_base_model_kfold.py
                           max inner distance) filled with the organoid mean colour
     core_texture_removed  the rest (core) filled with the organoid mean colour
     shifted               organoid moved to a random spot in the frame
+    scaled_0.7 / _1.4     organoid (image + mask) resized about its centre: same
+                          shape and texture, different size. If P(Acceptable)
+                          moves with size, the model uses size itself, not just
+                          a shape that co-varies with it.
 
 The clipped (mean_fill_clip) images already have every non-organoid pixel set to
 the background gray (178), so the model can only use the organoid itself plus its
@@ -47,7 +51,7 @@ from analysis.images.cnn_lstm.train_base_model import (
 from analysis.images.cnn_lstm.organoid_dataset import load_split_from_json
 
 CONDITIONS = ["original", "no_organoid", "silhouette", "rim_texture_removed",
-              "core_texture_removed", "shifted"]
+              "core_texture_removed", "shifted", "scaled_0.7", "scaled_1.4"]
 RIM_FRAC = 0.25   # rim = outer quarter of the organoid by distance to its edge
 MIN_SHIFT = 0.15  # shifted: move at least this fraction of the frame size
 BG = BG_FILL_U8.astype(np.float32) / 255.0
@@ -88,6 +92,26 @@ def shift_organoid(img, mask, rng, tries=200):
     return None
 
 
+def scale_organoid(img, mask, factor):
+    """Resize the organoid (image + mask together, so shape and texture are kept)
+    by `factor` about its bounding-box centre and paste it on a blank frame, shifted
+    if needed to stay fully inside. None if it no longer fits."""
+    ys, xs = np.nonzero(mask)
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    h, w = mask.shape
+    nh, nw = max(1, round((y1 - y0) * factor)), max(1, round((x1 - x0) * factor))
+    if nh > h or nw > w:
+        return None
+    crop = Image.fromarray((img[y0:y1, x0:x1] * 255).astype(np.uint8)).resize((nw, nh), Image.BILINEAR)
+    cm = np.asarray(Image.fromarray(mask[y0:y1, x0:x1].astype(np.uint8) * 255).resize((nw, nh), Image.NEAREST)) > 127
+    ty = int(np.clip(round((y0 + y1) / 2 - nh / 2), 0, h - nh))
+    tx = int(np.clip(round((x0 + x1) / 2 - nw / 2), 0, w - nw))
+    out = np.empty_like(img); out[:] = BG
+    region = out[ty:ty + nh, tx:tx + nw]
+    region[cm] = (np.asarray(crop).astype(np.float32) / 255.0)[cm]
+    return out
+
+
 def edit(img, mask, dil, cond, rng):
     """Return (edited image, ok). Removal/moving uses the dilated mask `dil` so no
     halo is left behind; texture fills use the exact `mask` so size, outline and
@@ -108,6 +132,9 @@ def edit(img, mask, dil, cond, rng):
     if cond == "shifted":
         moved = shift_organoid(img, dil, rng)
         return (moved, True) if moved is not None else (out, False)
+    if cond.startswith("scaled_"):
+        scaled = scale_organoid(img, dil, float(cond.split("_")[1]))
+        return (scaled, True) if scaled is not None else (out, False)
     raise ValueError(cond)
 
 
