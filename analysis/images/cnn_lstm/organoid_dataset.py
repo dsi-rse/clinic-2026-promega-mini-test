@@ -178,6 +178,11 @@ class OrganoidTimeSeriesDataset(Dataset):
                     if mask.ndim == 3: mask = mask[:, :, 0]
                     img = self.apply_mean_fill(img, mask)
 
+            # Scale to [0, 1] (as SingleDayOrganoidDataset does). Without this the
+            # (img * 255).astype(uint8) below overflows on 0-255 input and wraps every
+            # pixel to 256 - v, i.e. the model saw photographic negatives.
+            img = img / 255.0
+
             if self.transform:
                 from PIL import Image
                 img_pil = Image.fromarray((img * 255).astype(np.uint8))
