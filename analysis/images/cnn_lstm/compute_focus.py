@@ -21,7 +21,7 @@ Examples:
     python analysis/images/cnn_lstm/compute_focus.py --label idor_balsel --all-days \\
         --image-type clipped --out focus_idor_balsel_alldays.csv
 
-    # bbox model (size removed) — prob/confidence valid, focus meaningless
+    # bbox model (size removed): mask is bbox-cropped too; compare enrichment, not focus
     python analysis/images/cnn_lstm/compute_focus.py --label idor_bbox_balsel \\
         --split-label idor_balsel --day 30 --bbox-crop --out focus_bbox.csv
 """
@@ -64,6 +64,28 @@ def load_mask(mask_path, hw):
     return (a > (0.5 * a.max() if a.max() > 0 else 0.5)).astype(np.float32)
 
 
+def load_mask_bbox(mask_path, hw, pad=10):
+    """Mask cropped + letterboxed exactly like SingleDayOrganoidDataset(bbox_crop=True)
+    crops the image, then resized to the model input, so it lines up with the bbox CAM."""
+    raw = np.asarray(Image.open(mask_path).convert("L"))
+    m = raw > 127
+    ys, xs = np.where(m)
+    if ys.size == 0:
+        return load_mask(mask_path, hw)
+    y0, y1 = max(0, int(ys.min()) - pad), min(m.shape[0], int(ys.max()) + pad)
+    x0, x1 = max(0, int(xs.min()) - pad), min(m.shape[1], int(xs.max()) + pad)
+    crop = m[y0:y1, x0:x1]
+    ch, cw = crop.shape; r = 384.0 / 512.0
+    if ch / cw > r:
+        pw = int(round(ch / r)) - cw
+        crop = np.pad(crop, ((0, 0), (pw // 2, pw - pw // 2)))
+    elif ch / cw < r:
+        ph = int(round(cw * r)) - ch
+        crop = np.pad(crop, ((ph // 2, ph - ph // 2), (0, 0)))
+    out = Image.fromarray(crop.astype(np.uint8) * 255).resize((hw[1], hw[0]), Image.NEAREST)
+    return (np.asarray(out) > 127).astype(np.float32)
+
+
 def process_day(day, test_ids, test_meta, args, device, ckpt=None):
     """Compute focus/confidence for every test organoid at one day. Returns rows."""
     ds_day = day_str(day)
@@ -98,7 +120,10 @@ def process_day(day, test_ids, test_meta, args, device, ckpt=None):
         x, label, org_id = ds[i]
         x = x.unsqueeze(0).to(device)
         model.zero_grad(set_to_none=True); acts.clear(); grads.clear()
-        logit = model(x); prob = torch.sigmoid(logit).item(); logit.backward()
+        logit = model(x); prob = torch.sigmoid(logit).item()
+        # 'acceptable': evidence for Acceptable for every organoid (original behaviour);
+        # 'predicted': evidence for whichever class the model predicted.
+        (-logit if args.cam_target == "predicted" and prob < 0.5 else logit).sum().backward()
         a = acts["v"]; g = grads["v"]
         w = g.mean(dim=(2, 3), keepdim=True)
         cam = F.relu((w * a).sum(dim=1, keepdim=True))
@@ -106,7 +131,7 @@ def process_day(day, test_ids, test_meta, args, device, ckpt=None):
         cam = cam.squeeze().detach().cpu().numpy()
         if cam.max() > 0:
             cam = cam / cam.max()
-        mask = load_mask(samp["mask_path"], TARGET_SIZE)
+        mask = (load_mask_bbox if args.bbox_crop else load_mask)(samp["mask_path"], TARGET_SIZE)
         denom = cam.sum()
         focus = float((cam * mask).sum() / denom) if denom > 0 else float("nan")
         mask_frac = float(mask.mean())
@@ -126,7 +151,7 @@ def process_day(day, test_ids, test_meta, args, device, ckpt=None):
         lab = int(label.item()) if hasattr(label, "item") else int(label)
         pred = int(prob > 0.5)
         rows.append({
-            "day": day, "organoid_id": org_id,
+            "day": day, "organoid_id": org_id, "cam_target": args.cam_target,
             "true_label": "Acceptable" if lab == 1 else "Not Acceptable",
             "prob_acceptable": round(prob, 4),
             "pred": "Acceptable" if pred == 1 else "Not Acceptable",
@@ -178,8 +203,12 @@ def main():
                     help="Checkpoint folder under runs_root/label/ (e.g. base_effnet, "
                          "base_effnet_strongaug) — lets you Grad-CAM the augmented model.")
     ap.add_argument("--bbox-crop", action="store_true",
-                    help="Crop to mask bbox + letterbox (size removed). focus/enrichment "
-                         "meaningless under bbox; only prob/confidence/correct are valid.")
+                    help="Crop to mask bbox + letterbox (size removed). The mask is cropped "
+                         "the same way so focus lines up; compare via enrichment, since the "
+                         "organoid fills most of a bbox frame.")
+    ap.add_argument("--cam-target", default="acceptable", choices=["acceptable", "predicted"],
+                    help="Grad-CAM toward Acceptable for every organoid (default) or toward "
+                         "the class the model predicted.")
     ap.add_argument("--kfold", action="store_true",
                     help="Use k-fold models (day_<d>/rep_<r>/fold_<k>/): each organoid is "
                          "scored by the fold model that held it out. Adds a 'fold' column.")
