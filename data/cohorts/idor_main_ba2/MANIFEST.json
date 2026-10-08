@@ -1,0 +1,8 @@
+{
+  "description": "idor_main restricted to batch BA2 (plates BA2_96_1, BA2_96_2), which share imaging quality; BA1 images are blurrier/darker. Used to test CNNs without the batch imaging confound. train/val/test are pooled by the k-fold trainer.",
+  "source": "data/cohorts/idor_main/series",
+  "counts": {
+    "Acceptable": 62,
+    "Not Acceptable": 22
+  }
+}
