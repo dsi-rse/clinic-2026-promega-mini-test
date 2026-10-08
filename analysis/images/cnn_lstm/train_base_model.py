@@ -97,13 +97,16 @@ class SingleDayOrganoidDataset(Dataset):
     Uses the LSTM processed images (same as LSTM but picks one timepoint).
     """
     def __init__(self, organoid_ids, series_metadata, target_day, transform=None,
-                 image_type='std', bbox_crop=False, bbox_pad=10):
+                 image_type='std', bbox_crop=False, bbox_pad=10, brighten=False):
         """
         bbox_crop: if True, crop each image to its mask bounding box (with bbox_pad
                    pixels of padding) before applying transforms. This removes the
                    bulk-size signal from the input — every organoid fills the same
                    display area regardless of its biological size. Used to test
                    whether the model is relying on size as a shortcut.
+        brighten:  if True, contrast-stretch each image so the organoid's own interior
+                   (1st-99th percentile inside its eroded mask) spans 0..1. Interiors are
+                   otherwise near-black (~5-60 of 255), hiding internal structure.
         """
         self.samples = []
 
@@ -123,8 +126,8 @@ class SingleDayOrganoidDataset(Dataset):
             if img_path is None or not Path(img_path).exists():
                 continue
             mask_path = best_tp.get('mask_paths', {}).get(image_type)
-            # mask is only required if bbox_crop is on
-            if bbox_crop and (mask_path is None or not Path(mask_path).exists()):
+            # mask is only required if bbox_crop or brighten is on
+            if (bbox_crop or brighten) and (mask_path is None or not Path(mask_path).exists()):
                 continue
 
             self.samples.append({
@@ -138,8 +141,9 @@ class SingleDayOrganoidDataset(Dataset):
         self.transform = transform
         self.bbox_crop = bbox_crop
         self.bbox_pad = bbox_pad
+        self.brighten = brighten
         print(f"  Loaded {len(self.samples)} samples for day ~{target_day}"
-              + ("  [bbox-crop enabled]" if bbox_crop else ""))
+              + ("  [bbox-crop enabled]" if bbox_crop else "") + ("  [brighten enabled]" if brighten else ""))
     
     def __len__(self):
         return len(self.samples)
@@ -156,6 +160,14 @@ class SingleDayOrganoidDataset(Dataset):
 
         img = img.astype(np.float32) / 255.0  # Normalize to [0,1]
 
+        if self.brighten:
+            from scipy.ndimage import binary_erosion
+            m = imread(sample["mask_path"])
+            m = (m[:, :, 0] if m.ndim == 3 else m) > 127
+            inner = binary_erosion(m, iterations=6)
+            if inner.sum() > 100:
+                lo, hi = np.percentile(img[inner].mean(axis=-1), [1, 99])
+                img = np.clip((img - lo) / max(hi - lo, 1e-3), 0, 1)
 
         # Optional bbox-crop: crop the image to its mask's bounding box, then
         # LETTERBOX it (pad with the image's mean color) to a target aspect
