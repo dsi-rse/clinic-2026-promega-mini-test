@@ -160,6 +160,10 @@ def _fold_splits(ids, y, groups, n_folds, rep, folds_from_file):
 
 
 def run_day(day, ids, meta, device, args):
+    if args.exact_day:
+        # gappy cohorts: only organoids with a real image on this day (no nearest-day fallback)
+        ids = [o for o in ids if any(float(tp["mdl_day"]) == float(day) for tp in meta[o]["timepoints"])]
+        print(f"  day {day}: {len(ids)} organoids with an image on this day")
     y = np.array([_label(meta, o) for o in ids])
     groups = np.array([_well(o) for o in ids])
     if len(np.unique(y)) < 2 or np.bincount(y).min() < args.n_folds:
@@ -228,13 +232,13 @@ def _run_fold(day, rep, fi, rep_seed, ids, tr_idx, te_idx, meta, train_tf, eval_
     itr = [tr[i] for i in it_idx]; iv = [tr[i] for i in iv_idx]
     train_ds = SingleDayOrganoidDataset(itr, meta, day, transform=train_tf,
                                         image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten)
+                                       brighten=args.brighten, exact_day=args.exact_day)
     val_ds = SingleDayOrganoidDataset(iv, meta, day, transform=eval_tf,
                                       image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten)
+                                       brighten=args.brighten, exact_day=args.exact_day)
     test_ds = SingleDayOrganoidDataset(te, meta, day, transform=eval_tf,
                                        image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten)
+                                       brighten=args.brighten, exact_day=args.exact_day)
     if len(train_ds) == 0 or len(test_ds) == 0:
         return
     tl_labels = [s["label"] for s in train_ds.samples]
@@ -274,6 +278,9 @@ def main():
     ap.add_argument("--bbox-crop", action="store_true")
     ap.add_argument("--brighten", action="store_true",
                     help="Contrast-stretch each organoid's interior to 0..1 (see SingleDayOrganoidDataset).")
+    ap.add_argument("--exact-day", action="store_true",
+                    help="Per day, use only organoids imaged ON that day (for cohorts with missing days, "
+                         "e.g. data/cohorts/idor_main/full). Folds are built per day from those organoids.")
     ap.add_argument("--pos-weight-scale", type=float, default=1.0)
     ap.add_argument("--select", default="bal", choices=["bal", "acc"],
                     help="Inner-val checkpoint metric: bal (balanced acc, default) or acc.")

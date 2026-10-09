@@ -29,6 +29,7 @@ from sklearn.metrics import precision_recall_fscore_support
 
 from analysis.images.cnn_lstm.organoid_dataset import (
     OrganoidTimeSeriesDataset,
+    pad_collate,
     load_split_from_json,
     resolve_split_path,
 )
@@ -126,10 +127,15 @@ class OrganoidCNN_LSTM(nn.Module):
         feats = torch.stack(feats, dim=1)
 
         lstm_out, _ = self.lstm(feats)   # (B, T, H)
+        # Padded frames (pad_collate, days_norm < 0) sit at the end of a sequence,
+        # so they never affect earlier LSTM outputs; just leave them out of the readout.
+        valid = (days_norm >= 0).to(lstm_out.device)                     # (B, T)
         if self.readout == "mean":
-            pooled = lstm_out.mean(dim=1)      # every timestep routes to the head
+            w = valid.unsqueeze(-1).to(lstm_out.dtype)
+            pooled = (lstm_out * w).sum(dim=1) / w.sum(dim=1).clamp(min=1)  # mean over real frames
         else:
-            pooled = lstm_out[:, -1, :]        # final-state readout (default)
+            last = valid.long().sum(dim=1).clamp(min=1) - 1                   # last real frame
+            pooled = lstm_out[torch.arange(B, device=lstm_out.device), last]
         logit = self.head(pooled).squeeze(1)
         return logit
 
@@ -240,11 +246,11 @@ def train_for_day_range(max_day, train_ids, val_ids, test_ids,
 
     pin = (device.type == "cuda")
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,
-                              num_workers=NUM_WORKERS, pin_memory=pin)
+                              num_workers=NUM_WORKERS, pin_memory=pin, collate_fn=pad_collate)
     val_loader   = DataLoader(val_dataset,   batch_size=BATCH_SIZE, shuffle=False,
-                              num_workers=NUM_WORKERS, pin_memory=pin)
+                              num_workers=NUM_WORKERS, pin_memory=pin, collate_fn=pad_collate)
     test_loader  = DataLoader(test_dataset,  batch_size=BATCH_SIZE, shuffle=False,
-                              num_workers=NUM_WORKERS, pin_memory=pin)
+                              num_workers=NUM_WORKERS, pin_memory=pin, collate_fn=pad_collate)
     # ---- END OF INSERT ----
 
     # class balance from train IDs (sequence-level)

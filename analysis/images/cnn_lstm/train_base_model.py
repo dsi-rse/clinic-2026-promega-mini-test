@@ -108,7 +108,7 @@ class SingleDayOrganoidDataset(Dataset):
     Uses the LSTM processed images (same as LSTM but picks one timepoint).
     """
     def __init__(self, organoid_ids, series_metadata, target_day, transform=None,
-                 image_type='std', bbox_crop=False, bbox_pad=10, brighten=False):
+                 image_type='std', bbox_crop=False, bbox_pad=10, brighten=False, exact_day=False):
         """
         bbox_crop: if True, crop each image to its mask bounding box (with bbox_pad
                    pixels of padding) before applying transforms. This removes the
@@ -118,6 +118,9 @@ class SingleDayOrganoidDataset(Dataset):
         brighten:  if True, contrast-stretch each image so the organoid's own interior
                    (1st-99th percentile inside its eroded mask) spans 0..1. Interiors are
                    otherwise near-black (~5-60 of 255), hiding internal structure.
+        exact_day: if True, skip organoids with no timepoint ON target_day instead of
+                   using the nearest day (needed when days can be missing, e.g. the
+                   edge-filtered cohort/full splits).
         """
         self.samples = []
 
@@ -132,6 +135,8 @@ class SingleDayOrganoidDataset(Dataset):
 
             # Find the timepoint closest to target_day
             best_tp = min(timepoints, key=lambda tp: abs(tp['mdl_day'] - target_day))
+            if exact_day and float(best_tp['mdl_day']) != float(target_day):
+                continue
 
             img_path = best_tp.get('img_paths', {}).get(image_type)
             if img_path is None or not Path(img_path).exists():

@@ -239,6 +239,24 @@ class OrganoidTimeSeriesDataset(Dataset):
 
 
 
+PAD_DAY = -1.0  # days_norm value marking a padded (not real) frame
+
+
+def pad_collate(batch):
+    """Batch OrganoidTimeSeriesDataset items whose sequences differ in length (days
+    removed by the edge filter). Short sequences are zero-padded at the END and their
+    padded days_norm set to PAD_DAY, which OrganoidCNN_LSTM uses to read out only real
+    frames. Equal-length batches come out identical to the default collate."""
+    seqs, days, labels, weights, ids = zip(*batch)
+    T = max(s.shape[0] for s in seqs)
+    out_s = torch.zeros((len(seqs), T) + tuple(seqs[0].shape[1:]), dtype=seqs[0].dtype)
+    out_d = torch.full((len(seqs), T), PAD_DAY, dtype=days[0].dtype)
+    for i, (s, d) in enumerate(zip(seqs, days)):
+        out_s[i, :s.shape[0]] = s
+        out_d[i, :d.shape[0]] = d
+    return out_s, out_d, torch.stack(labels), torch.stack(weights), list(ids)
+
+
 def resolve_split_path(splits_dir, phase):
     """
     Given a directory and a phase ('train' | 'val' | 'test'), return the path

@@ -36,7 +36,7 @@ from analysis.images.cnn_lstm.train_temporal_ablation_lstm import (
 )
 from analysis.images.cnn_lstm.train_base_model_kfold import SEED, _fold_splits, _label, _well
 from analysis.images.cnn_lstm.organoid_dataset import (
-    OrganoidTimeSeriesDataset, load_split_from_json, resolve_split_path,
+    OrganoidTimeSeriesDataset, load_split_from_json, resolve_split_path, pad_collate,
 )
 
 
@@ -48,7 +48,8 @@ def predict(model_path, ids, meta, max_day, image_type, readout, device):
     eval_tf = transforms.Compose([transforms.Resize((384, 384), interpolation=InterpolationMode.BILINEAR)])
     ds = OrganoidTimeSeriesDataset(ids, meta, max_day=max_day, transform=eval_tf, image_type=image_type)
     out = {}
-    for seqs, days, labels, _, oids in DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS):
+    for seqs, days, labels, _, oids in DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS,
+                                                        collate_fn=pad_collate):
         p = torch.sigmoid(model(seqs.to(device), days.to(device).float())).cpu().numpy()
         for oid, pr, lab in zip(oids, np.atleast_1d(p), labels.numpy()):
             out[oid] = (float(pr), int(lab))
@@ -66,6 +67,8 @@ def main():
     ap.add_argument("--n-folds", type=int, default=4)
     ap.add_argument("--repeats", default="1",
                     help="Comma-separated 1-based CV repeats to run (e.g. 1 or 1,2,3).")
+    ap.add_argument("--require-last-day", action="store_true",
+                    help="Only organoids with an image on --max-day (for cohorts with missing days).")
     ap.add_argument("--keep-models", action="store_true",
                     help="Keep each fold's checkpoint (default: delete after scoring).")
     args = ap.parse_args()
@@ -77,6 +80,13 @@ def main():
         i, m = load_split_from_json(resolve_split_path(args.splits_dir, phase))
         meta.update(m); ids += i
     ids = sorted(set(ids))                              # same ordering as train_base_model_kfold
+    if args.require_last_day:
+        # Gappy cohorts (e.g. cohort/full, edge-filtered days removed): keep organoids
+        # with a real image on the window's last day, so every sequence still ends on
+        # max_day and days_norm stays on one scale. Missing middle days are skipped
+        # (pad_collate + masked readout).
+        ids = [o for o in ids if any(float(tp["mdl_day"]) == float(args.max_day)
+                                     for tp in meta[o]["timepoints"])]
     y = np.array([_label(meta, o) for o in ids])
     groups = np.array([_well(o) for o in ids])
     win_dir = args.output_dir / f"days_3-{max_day}"
