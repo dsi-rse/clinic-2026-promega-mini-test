@@ -40,8 +40,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from analysis.images.cnn_lstm.train_base_model import (
     BaselineEfficientNet, SingleDayOrganoidDataset, evaluate, ForegroundColorJitter,
-    TARGET_SIZE, DAY_RANGES, BATCH_SIZE, NUM_WORKERS, MAX_EPOCHS, PATIENCE, GRAD_CLIP, LR,
-    set_seed, _BOUNDARY_DAYS,
+    DAY_RANGES, BATCH_SIZE, NUM_WORKERS, MAX_EPOCHS, PATIENCE, GRAD_CLIP, LR,
+    set_seed, _BOUNDARY_DAYS, input_resize,
 )
 from analysis.images.cnn_lstm.organoid_dataset import load_split_from_json
 
@@ -58,17 +58,17 @@ def _well(oid):
     return "_".join(oid.split("_")[:4])
 
 
-def _make_train_tf(target_day, strong_aug):
+def _make_train_tf(target_day, strong_aug, resize):
     if strong_aug:
         degrees = 0 if float(target_day) in _BOUNDARY_DAYS else 180
         return T.Compose([
-            T.Resize(TARGET_SIZE),
+            *resize,
             T.RandomHorizontalFlip(0.5),
             T.RandomAffine(degrees=degrees, translate=(0.1, 0.1), fill=[178, 178, 178]),
             ForegroundColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
         ])
     return T.Compose([
-        T.Resize(TARGET_SIZE), T.RandomHorizontalFlip(0.5),
+        *resize, T.RandomHorizontalFlip(0.5),
         T.RandomVerticalFlip(0.5), T.ColorJitter(0.2, 0.2, 0.2, 0.1),
     ])
 
@@ -165,8 +165,9 @@ def run_day(day, ids, meta, device, args):
     if len(np.unique(y)) < 2 or np.bincount(y).min() < args.n_folds:
         print(f"  day {day}: too few of a class for {args.n_folds}-fold, skipping")
         return None
-    train_tf = _make_train_tf(day, args.strong_aug)
-    eval_tf = T.Compose([T.Resize(TARGET_SIZE)])
+    resize = input_resize(args.image_type, args.bbox_crop)
+    train_tf = _make_train_tf(day, args.strong_aug, resize)
+    eval_tf = T.Compose(resize)
     day_dir = args.output_dir / f"day_{day}"
     oof_rows, rep_bal, rep_auc, fold_bal = [], [], [], []
     prob_sum, prob_n, true_of = {}, {}, {}

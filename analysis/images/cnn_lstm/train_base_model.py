@@ -50,6 +50,17 @@ LR = 5e-4
 GRAD_CLIP = 1.0
 SEED = 1
 TARGET_SIZE = (384, 512)  # (H, W) to match coworker's code
+
+
+def input_resize(image_type, bbox_crop):
+    """Resize step for the model input, never changing the organoid's proportions.
+    bbox crops are letterboxed to 3:4 and 'std' images are already 512x384, so
+    Resize(TARGET_SIZE) is safe for them. Uncropped 'clipped' images are 575x575
+    squares: keep them at native size (resizing to 384x512 stretched every
+    organoid ~1.33x horizontally)."""
+    if image_type == "clipped" and not bbox_crop:
+        return []
+    return [T.Resize(TARGET_SIZE)]
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Background fill of the mean_fill_clip ('clipped') preprocessing, verified as
@@ -356,7 +367,7 @@ def train_for_day(target_day, train_ids, val_ids, test_ids,
         # model never keys on colour-shifted background / mismatched corners.
         degrees = 0 if float(target_day) in _BOUNDARY_DAYS else 180
         train_tf = T.Compose([
-            T.Resize(TARGET_SIZE),
+            *input_resize(image_type, bbox_crop),
             T.RandomHorizontalFlip(0.5),
             T.RandomAffine(degrees=degrees, translate=(0.1, 0.1), fill=[178, 178, 178]),
             ForegroundColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
@@ -364,15 +375,13 @@ def train_for_day(target_day, train_ids, val_ids, test_ids,
         print(f"  [strong-aug] affine(deg={degrees}, fill=178) + foreground ColorJitter")
     else:
         train_tf = T.Compose([
-            T.Resize(TARGET_SIZE),
+            *input_resize(image_type, bbox_crop),
             T.RandomHorizontalFlip(0.5),
             T.RandomVerticalFlip(0.5),
             T.ColorJitter(0.2, 0.2, 0.2, 0.1),
         ])
 
-    eval_tf = T.Compose([
-        T.Resize(TARGET_SIZE),
-    ])
+    eval_tf = T.Compose(input_resize(image_type, bbox_crop))
 
     train_dataset = SingleDayOrganoidDataset(train_ids, train_meta, target_day, transform=train_tf, image_type=image_type, bbox_crop=bbox_crop)
     val_dataset   = SingleDayOrganoidDataset(val_ids,   val_meta,   target_day, transform=eval_tf,  image_type=image_type, bbox_crop=bbox_crop)
