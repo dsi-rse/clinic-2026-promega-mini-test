@@ -37,6 +37,31 @@ evaluated with the same 4-fold × 10-repeat CV folds
 - **Labels are noisy.** 40% of 5-rater organoids had a non-unanimous vote; raters only saw
   day 30 (day-30 results are partly "raters see size"; earlier days are true forecasts).
 - Day-30 size correlates with the share of Acceptable votes (ρ = 0.48).
+- **Image quality differs by batch.** BA1 images are blurrier and darker than BA2
+  (figures 23–24). BA2-only CNNs (`idor_main_ba2`: normal, brightened, brightened + bbox)
+  still add nothing beyond size; same-size AUC is at or below chance.
+- **Stretched inputs (fixed).** The first non-bbox CNN runs resized the 575×575 square
+  `clipped` images to 384×512, stretching organoids ~1.33× horizontally (figure 25).
+  Since `ee24cd0` they are fed at native 575×575. Reruns (`*_native`) match the
+  stretched runs within ±0.04 AUC on every day, so no conclusion changes. bbox runs and
+  the LSTM (square → 384×384) were never distorted.
+- **Organoids are small in the model input.** `clipped` images come from
+  `resized_575_square`, where the raw frame is padded onto a larger canvas, so the
+  organoid is ~half its raw width (figure 26). bbox crops zoom in but cannot add detail.
+- **One broken mask.** BA1_96_1_D10 day 30: the organoid runs off the frame edge and the
+  mask is a fragmented ring (9 pieces, ~half the day-28 area), which also mangles its
+  `clipped` image. Removing or correcting it changes day-30 AUCs by ≤ 0.005. Fix or drop
+  it before final numbers. Day-30 mask QC: `amanda_test/model_plots/mask_qc_day30.csv`.
+
+## Images used by the models
+All models read the cohort's `clipped` paths (`image_type='clipped'`) from
+`/net/projects2/promega/2026_04_15_data/intermediate/`:
+- images: `mean_fill_clip/<plate>_Dy<d>_<well>_clipped_meanfill_auto_filled.png` (575×575,
+  best-focus Z, background replaced by mean gray using the mask)
+- masks (bbox crop, brightening, Grad-CAM/occlusion): `resized_575_square_masks/<...>_nosplit_nostitch.png`
+
+`std` (`resized_512x384`, masks in `models/mmseg/predicted/`) keeps the raw framing but
+was not used for the reported models.
 
 ## Figures (`figures/`, PNG + PDF)
 
@@ -63,6 +88,10 @@ evaluated with the same 4-fold × 10-repeat CV folds
 | 20 | feature_screen_beyond_size | 15 features × 11 days, gain over plate-adjusted size, FDR |
 | 21 | day10_translucency_good_vs_bad | day-10 "translucent" pixels = surface buds, in both groups |
 | 22 | texture_brightened_day24_size_matched | brightened interiors, same-size pairs |
+| 23 | model_inputs_by_plate | exact model inputs (original / brightened / bbox), good and bad per plate |
+| 24 | interior_brightness_by_plate | BA1 interiors darker / lower contrast than BA2 |
+| 25 | ba2_model_inputs_exact | BA2-only inputs, test-time and augmented (pre-fix: stretched) |
+| 26 | image_versions | raw vs `std` vs `resized_575_square` vs `clipped` vs model input |
 | — | gradcam_examples/ | rotation Grad-CAM, std vs strong, day 24/30 cases |
 
 ## Results tables (`results/`)
@@ -78,7 +107,10 @@ Training / inference scripts live in `analysis/images/cnn_lstm/` (committed):
 
 Run outputs are on the cluster:
 - models / out-of-fold predictions: `/net/projects2/promega/project_data/model_tests/lstm_runs/idor_main/`
-  (`base_effnet_kfold4x10_{std,strong,bboxstd,brightstd,brightbbox}`, `temporal_lstm_kfold4x10`)
+  (`base_effnet_kfold4x10_{std,strong,bboxstd,brightstd,brightbbox}`, `temporal_lstm_kfold4x10`;
+  undistorted reruns `*_native`) and `.../idor_main_ba2/` (`ba2std`, `ba2bright`, their
+  `_native` reruns, `ba2brightbbox`). Native vs stretched comparison:
+  `amanda_test/model_plots/native_vs_stretched.csv`
 - per-organoid CSVs (focus, occlusion, size baseline, mask/translucent/feature tables):
   `/net/projects2/promega/project_data/amanda_test/model_plots/`
 
