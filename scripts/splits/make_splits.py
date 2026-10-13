@@ -382,7 +382,10 @@ def build_label_lookup(all_data: dict, min_votes: int = 4,
         if v.get("day", {}).get("number") != LABEL_DAY:
             continue
         lab = v.get("label") or {}
-        votes = lab.get("votes") or {}
+        # Regular-image votes only. `votes` pools in the inverted ("INV") re-show
+        # pass (up to 10 votes); those are a rater-consistency check upstream and
+        # must not count toward labels, vote counts or sample weights.
+        votes = lab.get("regular_votes") or lab.get("votes") or {}
         accept = votes.get("Acceptable", 0)
         reject = votes.get("Not Acceptable", 0)
 
@@ -440,9 +443,9 @@ def attach_labels(
             dropped += 1
             continue
         s["label"] = lab_obj["value"]
-        votes = lab_obj.get("votes", {})
+        votes = lab_obj.get("regular_votes") or lab_obj.get("votes", {})   # regular-image votes only
         s["n_votes_good"]  = votes.get("Acceptable", 0)
-        s["n_votes_total"] = lab_obj.get("total_evaluations", 0)
+        s["n_votes_total"] = sum(votes.values())
         labeled.append(s)
     return labeled, dropped
 

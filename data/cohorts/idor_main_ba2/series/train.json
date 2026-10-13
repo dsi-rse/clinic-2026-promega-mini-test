@@ -4,8 +4,8 @@
     "base_well": "BA2_96_1_A6",
     "genealogy_type": "nosplit",
     "label": "Acceptable",
-    "n_votes_good": 10,
-    "n_votes_total": 10,
+    "n_votes_good": 5,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
@@ -809,7 +809,7 @@
     "genealogy_type": "nosplit",
     "label": "Not Acceptable",
     "n_votes_good": 0,
-    "n_votes_total": 10,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
@@ -2416,8 +2416,8 @@
     "base_well": "BA2_96_1_D11",
     "genealogy_type": "nosplit",
     "label": "Acceptable",
-    "n_votes_good": 10,
-    "n_votes_total": 10,
+    "n_votes_good": 5,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
@@ -2617,8 +2617,8 @@
     "base_well": "BA2_96_1_D3",
     "genealogy_type": "nosplit",
     "label": "Acceptable",
-    "n_votes_good": 10,
-    "n_votes_total": 10,
+    "n_votes_good": 5,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
@@ -3220,8 +3220,8 @@
     "base_well": "BA2_96_1_E5",
     "genealogy_type": "nosplit",
     "label": "Acceptable",
-    "n_votes_good": 9,
-    "n_votes_total": 10,
+    "n_votes_good": 4,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
@@ -9049,8 +9049,8 @@
     "base_well": "BA2_96_2_D4",
     "genealogy_type": "nosplit",
     "label": "Not Acceptable",
-    "n_votes_good": 2,
-    "n_votes_total": 10,
+    "n_votes_good": 0,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,

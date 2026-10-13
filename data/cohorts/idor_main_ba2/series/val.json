@@ -205,8 +205,8 @@
     "base_well": "BA2_96_2_B10",
     "genealogy_type": "nosplit",
     "label": "Acceptable",
-    "n_votes_good": 10,
-    "n_votes_total": 10,
+    "n_votes_good": 5,
+    "n_votes_total": 5,
     "n_timepoints": 11,
     "days_present": [
       3.0,
