@@ -92,6 +92,7 @@ was not used for the reported models.
 | 24 | interior_brightness_by_plate | BA1 interiors darker / lower contrast than BA2 |
 | 25 | ba2_model_inputs_exact | BA2-only inputs, test-time and augmented (pre-fix: stretched) |
 | 26 | image_versions | raw vs `std` vs `resized_575_square` vs `clipped` vs model input |
+| 27 | what_each_model_saw | exact test-time input of every model, with input size and % of frame the organoid fills |
 | — | gradcam_examples/ | rotation Grad-CAM, std vs strong, day 24/30 cases |
 
 ## Results tables (`results/`)

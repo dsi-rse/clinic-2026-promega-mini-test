@@ -39,8 +39,20 @@ Same 4-fold × 10-repeat CV as V1 (folds rebuilt per day). Code: `cb365d7`
    as in V1; within BA2 alone this mostly shrinks, and it adds nothing over two-way size
    + plate (finding 2).
 
-Caveat: the two-way size baseline places spline knots using all organoids of the day
-(not refit per fold); the effect on AUC is negligible but it is not strictly out-of-fold.
+### Caveats
+- The two-way size baseline places spline knots using all organoids of the day (not refit
+  per fold); the effect on AUC is negligible but it is not strictly out-of-fold.
+- **Colour images.** The 98 stitched raw images (all of BA1 day 24, plus 20 others) are
+  genuinely colour (channels differ in ~86% of pixels); every other image is grayscale.
+  The pipeline keeps them in colour, so CNNs could use colour as a BA1-day-24 plate cue.
+  The plate-adjusted gains (`gain`, `gain_flex`) control for plate.
+- **Resolution.** Processed images are 9 µm/px; the organoid is ~60–75 px wide on days
+  3–10 and ~175 px at day 30. bbox crops enlarge these pixels but add no detail. Raw
+  best-Z frames are 1.69 µm/px (days 3–15) / 2.46 µm/px (days 17–30), ~4–5× finer.
+  A raw-resolution bbox test was prepared but not run.
+  `scripts/prep_raw_bestz.py` builds raw images + masks (outputs in
+  `amanda_test/raw_bestz/`, processed data untouched). Its self-check reproduces the
+  pipeline's 575×575 masks exactly (2087/2087) and its images to < 1 gray level.
 
 ## Files
 - `figures/v2_summary.png|pdf` — per-day AUC vs both size models; same-size AUC; LSTM vs
