@@ -42,10 +42,11 @@ Same 4-fold × 10-repeat CV as V1 (folds rebuilt per day). Code: `cb365d7`
 ### Caveats
 - The two-way size baseline places spline knots using all organoids of the day (not refit
   per fold); the effect on AUC is negligible but it is not strictly out-of-fold.
-- **Colour images.** The 98 stitched raw images (all of BA1 day 24, plus 20 others) are
-  genuinely colour (channels differ in ~86% of pixels); every other image is grayscale.
-  The pipeline keeps them in colour, so CNNs could use colour as a BA1-day-24 plate cue.
-  The plate-adjusted gains (`gain`, `gain_flex`) control for plate.
+- **Colour images (not a concern for the models).** The 98 stitched raw images (all of
+  BA1 day 24, plus 20 others) are colour, and stay colour in `std` and
+  `resized_575_square` (~90% of pixels). The `clipped` (`mean_fill_clip`) images all
+  models used are essentially gray (~0.5–1% of pixels with any colour), so the CNNs had
+  no colour cue for BA1 day 24.
 - **Resolution.** Processed images are 9 µm/px; the organoid is ~60–75 px wide on days
   3–10 and ~175 px at day 30. bbox crops enlarge these pixels but add no detail. Raw
   best-Z frames are 1.69 µm/px (days 3–15) / 2.46 µm/px (days 17–30), ~4–5× finer.
