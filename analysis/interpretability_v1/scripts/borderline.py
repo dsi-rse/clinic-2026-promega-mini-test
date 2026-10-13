@@ -30,14 +30,15 @@ for k, r in ad.items():
 rows = []
 for oid, r in relaxed.items():
     bw = r["base_well"]; lab = off.get(bw, {})
-    v = lab.get("votes") or {}; rv = lab.get("regular_votes") or {}
+    # regular-image votes only (the pooled `votes` field adds the inverted re-show pass)
+    rv = lab.get("regular_votes") or lab.get("votes") or {}; v = rv
     a = {}
     for tp in r["timepoints"]:
         m = np.asarray(Image.open(tp["mask_paths"]["clipped"]).convert("L"))
         a[tp["mdl_day"]] = float((m > 127).mean())
     rows.append({"organoid_id": oid, "in_main": oid in main, "official": lab.get("value"),
                  "n_acc": v.get("Acceptable", 0), "n_not": v.get("Not Acceptable", 0),
-                 "n_total": lab.get("total_evaluations", 0),
+                 "n_total": sum(rv.values()),
                  "reg_acc": rv.get("Acceptable", 0), "reg_not": rv.get("Not Acceptable", 0),
                  **{f"area_{d}": a.get(d, np.nan) for d in DAYS}})
 df = pd.DataFrame(rows)

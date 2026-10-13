@@ -35,7 +35,7 @@ for gi, (title, sel) in enumerate(groups):
         a1.imshow(crop, cmap="gray", vmin=0, vmax=1, interpolation="lanczos")
         ov = np.dstack([crop] * 3); ov[tl[y0:y1, x0:x1]] = [0.2, 0.85, 0.95]
         a2.imshow(ov, interpolation="nearest")
-        a1.set_title(f"{r.organoid_id.replace('_nosplit','')}\n{r.n_votes_good}/5 Acc", fontsize=9.5, color=col)
+        a1.set_title(f"{r.organoid_id.replace('_nosplit','')}\n{meta[r.organoid_id]['n_votes_good']}/{meta[r.organoid_id]['n_votes_total']} Acc", fontsize=9.5, color=col)
         a2.set_title(f"translucent {r.translucent_frac*100:.1f}%", fontsize=9.5, color=col)
         for a in (a1, a2):
             a.set_xticks([]); a.set_yticks([])
