@@ -160,8 +160,8 @@ kind = pd.Series(kind)
 KC = {"accepted": GOOD, "rejected, stalled": BAD, "rejected, overgrown": "#b2182b"}
 
 # ======================= FIG A: what we ran, and how well it works =======================
-fig = plt.figure(figsize=(16, 20))
-gs = GridSpec(3, 3, figure=fig, height_ratios=[1.15, 1.1, 1], hspace=.42, wspace=.32)
+fig = plt.figure(figsize=(16, 21.5))
+gs = GridSpec(3, 3, figure=fig, height_ratios=[1.15, 1.35, 1], hspace=.42, wspace=.32)
 
 # a: model inputs, one organoid per row
 sub = gs[0, :].subgridspec(3, 10, wspace=.06, hspace=.1, width_ratios=[1, 1, 1, 1, .2, 1, 1, 1, 1, 1])
@@ -194,20 +194,33 @@ for i, o in enumerate(EXAMPLES):
         if i == 0:
             a.set_title(("LSTM: the whole image sequence\n" if j == 2 else "\n") + f"day {d}", fontsize=10)
 
+def mask_auc(v, d):
+    """mean over repeats of the per-repeat OOF AUC (as perday_eval.py does for the other CNNs)"""
+    o = pd.read_csv(RUNS / f"base_effnet_kfold4x10_{v}/day_{d}/oof_predictions.csv")
+    return float(np.mean([roc_auc_score(g.true_label, g.prob_acceptable) for _, g in o.groupby("repeat")]))
+
+
+COL.update({"mask": "#d9d9d9", "maskbbox": "#a6a6a6"})
+MASK_DAYS = ["17", "20.5", "24", "28", "30"]
+
 # b: the ladder at day 30
 a = fig.add_subplot(gs[1, :2]); tag(a, "b")
 c30 = cnn[cnn.day == 30].set_index("model"); l30 = lstm[(lstm.window == "3-30")].set_index("model")
 LAD = [("Size, one cutoff\n(bigger = better)", c30.loc["std", "size_auc"], SIZE1, "size"),
        ("Size, two cutoffs\n(too small or too big = bad)", c30.loc["std", "flex_auc"], SIZE2, "size"),
        ("Size + growth rate\n(days 3–30, two cutoffs)", l30.loc["LSTM mean", "flex_auc"], SIZEG, "size")] + \
+      [("CNN, mask only, whole frame\n(size + outline)", mask_auc("mask", "30"), COL["mask"], "mask"),
+       ("CNN, mask only, cropped\n(outline only)", mask_auc("maskbbox", "30"), COL["maskbbox"], "mask")] + \
       [(NAMES[k].replace("\n", " "), c30.loc[k, "auc"], COL[k], "img") for k in ("std", "strong", "bbox", "brightbbox")] + \
       [("LSTM, image sequence days 3–30\n(averaged over all frames)", l30.loc["LSTM mean", "auc"], COL["LSTM mean"], "img")]
-yy_ = np.array([9, 8, 7, 5, 4, 3, 2, 1], float)   # gap between the two groups
+yy_ = np.array([12, 11, 10, 8, 7, 5, 4, 3, 2, 1], float)   # gaps between the three groups
 for (nm, v, c, grp), yv in zip(LAD, yy_):
-    a.barh(yv, v - .5, left=.5, color=c, edgecolor="k", lw=.6, height=.7)
+    a.barh(yv, v - .5, left=.5, color=c, edgecolor="k", lw=.6, height=.7, hatch="//" if grp == "mask" else None)
     a.text(v + .005, yv, f"{v:.2f}", va="center", fontsize=11, fontweight="bold" if v == max(x[1] for x in LAD) else "normal")
-a.axhline(6, color="0.5", lw=1, ls="--")
-a.text(.505, 9.5, "SIZE ONLY (one number per organoid, no image)", fontsize=10, color="0.3", va="bottom")
+for yl in (9, 6):
+    a.axhline(yl, color="0.5", lw=1, ls="--")
+a.text(.505, 12.5, "SIZE ONLY (one number per organoid, no image)", fontsize=10, color="0.3", va="bottom")
+a.text(.505, 8.5, "MASK ONLY (CNN trained on the black-and-white mask: no texture)", fontsize=10, color="0.3", va="bottom")
 a.text(.505, 5.5, "IMAGE MODELS (see the whole picture)", fontsize=10, color="0.3", va="bottom")
 a.set_yticks(yy_); a.set_yticklabels([x[0] for x in LAD], fontsize=10); a.set_xlim(.5, .95)
 a.set_xlabel("AUC at day 30 (0.5 = chance; mean of 4-fold × 10-repeat CV, same 155 organoids)")
@@ -252,6 +265,8 @@ for k in ("std", "strong", "bbox", "brightbbox"):
     d = cnn[cnn.model == k].sort_values("day")
     a.plot(d.day, d.auc, "o-", color=COL[k], lw=1.4 if k != "brightbbox" else 2.2, ms=4 if k != "brightbbox" else 6, mec="k", mew=.4,
            label=NAMES[k].replace("\n", " "))
+for v, nm in (("mask", "CNN, mask only (whole frame)"), ("maskbbox", "CNN, mask only (cropped)")):
+    a.plot([float(d) for d in MASK_DAYS], [mask_auc(v, d) for d in MASK_DAYS], "s--", color=COL[v], lw=1.6, ms=5, mec="k", mew=.4, label=nm)
 a.axvspan(2, 18, color="0.94", zorder=0)
 a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC"); day_axis(a); a.set_xlim(2, 31)
 a.legend(loc="upper left", fontsize=7.5)

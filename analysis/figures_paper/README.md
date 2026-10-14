@@ -6,10 +6,10 @@ Every panel title states its finding.
 
 **Fig A — `figA_models_and_performance`: what we ran and how well it works**
 - a: what each model gets, for the same 3 organoids used in Fig B (accepted / stalled reject / overgrown reject): size only (mask area), CNN whole image (also used with strong augmentation), CNN cropped, CNN cropped + brightened, LSTM image sequence
-- b: day-30 ladder — size models (one number per organoid) vs image models; best image model 0.88 ties size with two cutoffs 0.87
+- b: day-30 ladder — size models (one number per organoid), mask-only CNNs (trained on the mask: no texture), image models; best image model 0.88 ties size with two cutoffs 0.87
 - c: why two cutoffs — day-30 size density, Acceptable vs Not Acceptable (Not Acceptable is both smaller and larger)
 - d: growth curves — accepted vs stalled vs overgrown rejects; groups split at days 15–17
-- e: every day — image models never beat size; before day 20 they are worse
+- e: every day — image models never beat size; before day 20 they are worse (mask-only CNNs shown for days 17–30)
 - f: LSTM (mean-pooled over all frames) vs size + growth rate for each window — the LSTM adds nothing
 
 **Fig B — `figB_what_models_look_at`: what the models see**
@@ -30,7 +30,8 @@ Definitions for captions
 - **Size, one cutoff**: logistic regression on log mask area + plate (bigger = better).
 - **Size, two cutoffs**: the same on a spline of log area, so too small and too big can both be called bad.
 - **Size + growth rate**: last-day size + growth slope over the window (two cutoffs) — the LSTM's baseline.
-- **Mask only**: organoid mask filled flat gray at test time (V1 models): size + outline, no texture.
+- **Mask only (B-c)**: organoid mask filled flat gray at test time on the V1 models: size + outline, no texture.
+- **Mask-only CNN (A-b, A-e)**: a CNN *trained* on the mask (organoid black on the 178-gray background, `--mask-only`), same 4-fold × 10-repeat CV and folds as the image CNNs, days 17–30. Whole frame = size + outline; cropped = outline only (the crop removes absolute size).
 - **Missed by every method** (`rejects_by_method.csv`): mean OOF P(Acceptable) ≥ 0.5 for the growth-rate
   rule, all four CNNs (latest of day 24/28/30 with an image) and the mean-pooled LSTM (where scored).
   7 of 33: BA1_96_1_A8, BA2_96_1_D8, F3, G4, G5, BA2_96_2_G7, H2.
