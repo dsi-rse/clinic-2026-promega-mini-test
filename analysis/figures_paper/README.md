@@ -26,6 +26,7 @@ Every panel title states its finding.
 - d: the 7 vs same-plate, same-size accepted organoids
 
 Definitions for captions
+- **Area**: mask pixel count × 81 µm² (every processed image is 9 µm/px, `ar_target_um_per_px` in all_data.json), in mm².
 - **Size, one cutoff**: logistic regression on log mask area + plate (bigger = better).
 - **Size, two cutoffs**: the same on a spline of log area, so too small and too big can both be called bad.
 - **Size + growth rate**: last-day size + growth slope over the window (two cutoffs) — the LSTM's baseline.

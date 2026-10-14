@@ -125,6 +125,7 @@ SIZE1, SIZE2, SIZEG = "0.72", "0.25", "0.45"          # grays: size one cutoff /
 NAMES = {"std": "CNN, whole image", "strong": "CNN, whole image\n+ strong augment.", "bbox": "CNN, cropped to organoid",
          "brightbbox": "CNN, cropped +\nbrightened", "LSTM last": "LSTM, image\nsequence days 3–30"}
 COL = {"std": S2[2], "strong": S2[1], "bbox": S2[3], "brightbbox": S2[5], "LSTM last": "#6a51a3"}
+MM2 = lambda la: np.exp(la) * 81e-6   # mask pixels at 9 um/px (all_data ar_target_um_per_px) -> mm^2
 EXAMPLES = ["BA1_96_1_H6_nosplit", "BA2_96_2_C3_nosplit", "BA2_96_2_E12_nosplit"]   # same organoids as the Grad-CAM panel
 EXNOTE = {"BA1_96_1_H6_nosplit": "accepted", "BA2_96_2_C3_nosplit": "rejected, stalled", "BA2_96_2_E12_nosplit": "rejected, overgrown"}
 
@@ -172,7 +173,7 @@ for i, o in enumerate(EXAMPLES):
         a = fig.add_subplot(sub[i, j])
         if mode is None:
             m = mask_img(o, 30); a.imshow(m, cmap="gray_r", vmin=0, vmax=1.4)
-            a.text(.5, .06, f"area = {np.exp(LA.loc[o, 30]) / 575 ** 2 * 100:.1f}% of frame", transform=a.transAxes, ha="center", fontsize=8.5,
+            a.text(.5, .06, f"area = {MM2(LA.loc[o, 30]):.2f} mm²", transform=a.transAxes, ha="center", fontsize=8.5,
                    bbox=dict(fc="w", ec="none", alpha=.85, pad=1))
         else:
             im = show(o, 30, *mode)
@@ -226,13 +227,13 @@ a.set_ylabel("% rejected"); a.set_title("Why two cutoffs: rejects are\nthe small
 # d: growth curves
 a = fig.add_subplot(gs[2, 0]); tag(a, "d")
 for k, c in KC.items():
-    A_ = np.exp(LA.loc[kind.index[kind == k]]) / 575 ** 2 * 100
+    A_ = MM2(LA.loc[kind.index[kind == k]])
     med, lo, hi = A_.median(), A_.quantile(.25), A_.quantile(.75)
     a.fill_between(med.index, lo, hi, color=c, alpha=.18, lw=0)
     a.plot(med.index, med, "o-", color=c, lw=2.2, ms=5, mec="k", mew=.4, ls="--" if "over" in k else "-", label=f"{k} (n={int((kind == k).sum())})")
 a.axvspan(14.5, 17.5, color="#fde7c8", zorder=0)
 a.set_yscale("log"); a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_ylabel("Organoid area (% of frame)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
+a.set_ylabel("Organoid area (mm²)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
 a.set_title("Rejects stall or overgrow;\ngroups split at days 15–17 (shaded)")
 
 # e: over time - image models vs size
@@ -349,9 +350,9 @@ a = fig.add_subplot(gs[0, 0]); tag(a, "a")
 p = oof_mean(RUNS / "base_effnet_kfold4x10_brightbbox/day_30/oof_predictions.csv")
 d = pd.DataFrame({"p": p, "a": LA[30], "k": kind}).dropna()
 for k, c in KC.items():
-    s = d[d.k == k]; a.scatter(np.exp(s.a) / 575 ** 2 * 100, s.p, s=22, color=c, edgecolor="k", lw=.4, alpha=.85, label=k)
-a.set_xscale("log"); a.set_xticks([2, 5, 10, 20, 40]); a.axhline(.5, color="0.6", ls="--", lw=1); a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_xlabel("Day-30 organoid area (% of frame)"); a.set_ylabel("CNN P(Acceptable)\n(cropped + brightened)"); a.legend(loc="lower right", fontsize=8.5)
+    s = d[d.k == k]; a.scatter(MM2(s.a), s.p, s=22, color=c, edgecolor="k", lw=.4, alpha=.85, label=k)
+a.set_xscale("log"); a.set_xticks([0.5, 1, 2, 4, 8]); a.axhline(.5, color="0.6", ls="--", lw=1); a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+a.set_xlabel("Day-30 organoid area (mm²)"); a.set_ylabel("CNN P(Acceptable)\n(cropped + brightened)"); a.legend(loc="lower right", fontsize=8.5)
 a.set_title("Best CNN's predictions follow size:\nsmall → bad, very big → borderline (~0.5)")
 
 a = fig.add_subplot(gs[0, 1]); tag(a, "b")
