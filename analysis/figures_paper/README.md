@@ -1,32 +1,40 @@
 # Paper figures: image models (single-day CNNs, trajectory LSTM) and interpretability
 
-`make_paper_figs.py` builds both figures on the cluster (see docstring). All vote counts are
-regular-image votes only; inverted re-show votes are never used. Labels are the official ≥ 4/5 labels.
+`make_paper_figs.py` builds all three on the cluster (see docstring). Vote counts are
+regular-image votes only (inverted re-show votes never used); labels are the official ≥ 4/5 labels.
+Every panel title states its finding.
 
-**Fig A — `figA_image_models_vs_size`**: image models reach AUC ~0.82–0.88 at day 30 but never beat two-way size.
-- a: exact model inputs (dataset code used in training) for the same 3 organoids as the Grad-CAM panel (B-d), day 30 + LSTM sequence
-- b: growth curves: accepted vs stalled vs overgrown rejects (reject split by latest late-day size vs same-plate accepted median); groups split days 15→17
-- c: % Not Acceptable by day-30 size fifth (61 / 0 / 10 / 3 / 23%), why size must be modelled two-way
-- d: single-day CNN AUC by day vs bigger-is-better and two-way size (V2, same organoids/folds)
-- e: LSTM (last / mean readout) vs size + growth baselines
-- f: same-size-pair AUC (CNNs near chance)
-- g: gain over two-way size + plate, every model and day (≤ +0.03)
-- h: brightened-bbox CNN prediction vs day-30 size (learned "too small or too big = bad")
+**Fig A — `figA_models_and_performance`: what we ran and how well it works**
+- a: what each model gets, for the same 3 organoids used in Fig B (accepted / stalled reject / overgrown reject): size only (mask area), CNN whole image (also used with strong augmentation), CNN cropped, CNN cropped + brightened, LSTM image sequence
+- b: day-30 ladder — size models (one number per organoid) vs image models; best image model 0.88 ties size with two cutoffs 0.87
+- c: why two cutoffs — % rejected by day-30 size fifth (61 / 0 / 10 / 3 / 23%)
+- d: growth curves — accepted vs stalled vs overgrown rejects; groups split at days 15–17
+- e: every day — image models never beat size; before day 20 they are worse
+- f: LSTM vs size + growth rate for each window — the LSTM adds nothing
 
-"Two-way size" = logistic regression on a spline of log area (+ plate), so both too-small and
-too-big can be bad; "bigger = better" is linear in log area. "Mask only" (B-b) = the organoid
-mask filled flat gray: size + outline, no texture.
+**Fig B — `figB_what_models_look_at`: what the models see**
+- a: Grad-CAM on the same 3 organoids (whole-image CNN, strong-augmentation CNN)
+- b: Grad-CAM heat density, organoid vs background, by day and model
+- c: mask only (texture removed) keeps the AUC → the CNN reads size/outline
+- d: resizing the same organoid moves the prediction (bigger → more acceptable from day 17)
+- e: LSTM day blanking — only the last day matters
 
-**Fig B — `figB_what_models_use`**: CNNs read size/silhouette, the LSTM reads its last frame, 21% of rejects are caught by nothing.
-- a–d: V1 models (140-organoid complete-series cohort): rescale intervention, occlusion, Grad-CAM heat density, Grad-CAM examples
-- e–f: LSTM day dropout (V2, repeat-1 checkpoints)
-- g: % of rejects caught per method; h: shape z-scores; i: the missed rejects vs same-size accepted
+**Fig C — `figC_what_no_model_catches`**
+- a: best CNN's day-30 prediction vs size (small → bad; very big → borderline)
+- b: % of rejects caught by each method; 7 of 33 (21%) caught by none
+- c: shape of those 7 vs others (less round, but shape adds no CV gain)
+- d: the 7 vs same-plate, same-size accepted organoids
 
-"Missed by every method" (fixed rule, `rejects_by_method.csv`): a reject whose mean out-of-fold
-P(Acceptable) over 10 repeats is ≥ 0.5 for the growth-band rule, all four CNNs (latest of day
-24/28/30 with an image) and the last-readout LSTM (where scored). 7 of 33: BA1_96_1_A8,
-BA2_96_1_D8, F3, G4, G5, BA2_96_2_G7, H2.
+Definitions for captions
+- **Size, one cutoff**: logistic regression on log mask area + plate (bigger = better).
+- **Size, two cutoffs**: the same on a spline of log area, so too small and too big can both be called bad.
+- **Size + growth rate**: last-day size + growth slope over the window (two cutoffs) — the LSTM's baseline.
+- **Mask only**: organoid mask filled flat gray at test time (V1 models): size + outline, no texture.
+- **Missed by every method** (`rejects_by_method.csv`): mean OOF P(Acceptable) ≥ 0.5 for the growth-rate
+  rule, all four CNNs (latest of day 24/28/30 with an image) and the LSTM (where scored).
+  7 of 33: BA1_96_1_A8, BA2_96_1_D8, F3, G4, G5, BA2_96_2_G7, H2.
 
-Caveats: Fig B a–d come from the V1 models (non-bbox V1 inputs were stretched 1.33×; reruns
-matched within ±0.04 AUC). B-a strong-aug "shrunk" at day 28 has a −0.48 median (real data,
-one day only). Day-dropout uses one repeat.
+Sources and caveats
+- V2 cohort (`data/cohorts/idor_main/full`, 155–198 organoids per day): all performance numbers, LSTM blanking, shape, montage. Same organoids and folds for size and image models.
+- Fig B a–d use the V1 models (140-organoid complete-series cohort; whole-image V1 inputs were stretched 1.33×, reruns matched within ±0.04 AUC).
+- LSTM blanking uses one CV repeat. AUCs are means of 4-fold × 10-repeat CV (no error bars in A-b).
