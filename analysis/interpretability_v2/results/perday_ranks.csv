@@ -87,19 +87,19 @@ brightbbox,30,BA2_96_1_A5,new bad,0.538,34,155
 brightbbox,30,BA2_96_1_E9,new bad,0.527,29,155
 brightbbox,30,BA2_96_1_G4,new bad,0.545,38,155
 brightbbox,30,BA2_96_2_C6,new bad,0.556,42,155
-LSTM last,30,BA2_96_2_E12,cyst,0.514,27,155
-LSTM last,30,BA2_96_2_H2,cyst,0.656,54,155
-LSTM last,30,BA1_96_1_C7,cyst,0.674,64,155
-LSTM last,30,BA2_96_1_A12,new bad,0.579,33,155
-LSTM last,30,BA2_96_1_A5,new bad,0.388,21,155
-LSTM last,30,BA2_96_1_E9,new bad,0.611,43,155
-LSTM last,30,BA2_96_1_G4,new bad,0.606,41,155
-LSTM last,30,BA2_96_2_C6,new bad,0.595,38,155
-LSTM mean,30,BA2_96_2_E12,cyst,0.757,136,155
-LSTM mean,30,BA2_96_2_H2,cyst,0.668,92,155
-LSTM mean,30,BA1_96_1_C7,cyst,0.719,121,155
-LSTM mean,30,BA2_96_1_A12,new bad,0.468,31,155
-LSTM mean,30,BA2_96_1_A5,new bad,0.368,15,155
-LSTM mean,30,BA2_96_1_E9,new bad,0.465,30,155
-LSTM mean,30,BA2_96_1_G4,new bad,0.609,69,155
-LSTM mean,30,BA2_96_2_C6,new bad,0.488,35,155
+LSTM last,30,BA2_96_2_E12,cyst,0.415,24,155
+LSTM last,30,BA2_96_2_H2,cyst,0.618,50,155
+LSTM last,30,BA1_96_1_C7,cyst,0.7,82,155
+LSTM last,30,BA2_96_1_A12,new bad,0.476,30,155
+LSTM last,30,BA2_96_1_A5,new bad,0.358,22,155
+LSTM last,30,BA2_96_1_E9,new bad,0.495,32,155
+LSTM last,30,BA2_96_1_G4,new bad,0.556,38,155
+LSTM last,30,BA2_96_2_C6,new bad,0.639,59,155
+LSTM mean,30,BA2_96_2_E12,cyst,0.732,142,155
+LSTM mean,30,BA2_96_2_H2,cyst,0.751,147,155
+LSTM mean,30,BA1_96_1_C7,cyst,0.727,139,155
+LSTM mean,30,BA2_96_1_A12,new bad,0.458,22,155
+LSTM mean,30,BA2_96_1_A5,new bad,0.443,21,155
+LSTM mean,30,BA2_96_1_E9,new bad,0.468,25,155
+LSTM mean,30,BA2_96_1_G4,new bad,0.577,48,155
+LSTM mean,30,BA2_96_2_C6,new bad,0.526,38,155

@@ -33,13 +33,20 @@ Same 4-fold × 10-repeat CV as V1 (folds rebuilt per day). Code: `cb365d7`
 3. **The V1 full-series rule hid the overgrowth failure mode.** With only 3 big-but-bad
    organoids (the cysts) V1 models could not learn it; adding the 5 edge-touching bad ones
    is what made it learnable.
-4. **LSTM:** `last` readout beats `mean` pooling late (days 3–30: 0.82 vs 0.75); `mean` is
-   better only for days 3–13 (0.60 vs 0.50). Neither beats two-way size + growth.
+4. **LSTM:** `last` readout beats `mean` pooling late (days 3–30: 0.82 vs 0.74); `mean` is
+   better only for days 3–13 (0.60 vs 0.53). Neither beats two-way size + growth.
+   Day dropout (`scripts/lstm_day_dropout.py`, repeat-1 checkpoints): blanking the last
+   frame costs ~0.15 AUC, removing days 15–17 only ~0.01–0.02, so the `last` LSTM is
+   mostly a last-day size model and does not use the day 15→17 growth pivot.
 5. **Same-size pairs:** the bbox CNNs are above chance at days 15–20.5 and 30 (0.60–0.71),
    as in V1; within BA2 alone this mostly shrinks, and it adds nothing over two-way size
    + plate (finding 2).
 
 ### Caveats
+- **Votes.** Vote counts (LSTM sample weights, figure titles) use only the regular-image
+  votes; the inverted re-show votes (`_INV`, 17 organoids) are never used (`efd3ff7`).
+  Labels were always regular-only. LSTMs were retrained after this fix; AUCs moved by
+  ≤ 0.03 (old runs kept as `*_pooledvotes`).
 - The two-way size baseline places spline knots using all organoids of the day (not refit
   per fold); the effect on AUC is negligible but it is not strictly out-of-fold.
 - **Colour images (not a concern for the models).** The 98 stitched raw images (all of

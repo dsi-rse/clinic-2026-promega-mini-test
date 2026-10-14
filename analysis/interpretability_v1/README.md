@@ -34,9 +34,13 @@ evaluated with the same 4-fold × 10-repeat CV folds
 - **Batch effect.** BA2 organoids are larger and more often rejected (5% vs 17–35%).
   Early-day size signals (days 3–10) are largely batch; late size and growth rates hold
   within batch and on an unseen plate (leave-one-plate-out). BA1 has only 3 rejects.
-- **Labels are noisy.** 40% of 5-rater organoids had a non-unanimous vote; raters only saw
+- **Labels are noisy.** 37% of organoids had a non-unanimous vote (of 5); raters only saw
   day 30 (day-30 results are partly "raters see size"; earlier days are true forecasts).
 - Day-30 size correlates with the share of Acceptable votes (ρ = 0.48).
+- **Votes.** All vote counts (LSTM sample weights, figures 15, 19, 21, 22, borderline
+  experiment) use only the regular-image votes; the inverted re-show votes (`_INV`) are
+  never used (`efd3ff7`, `46fc3bd`). Labels were always regular-only, so CNN results are
+  unaffected; the LSTM was retrained (days 3–30 AUC 0.82 → 0.81, within noise).
 - **Image quality differs by batch.** BA1 images are blurrier and darker than BA2
   (figures 23–24). BA2-only CNNs (`idor_main_ba2`: normal, brightened, brightened + bbox)
   still add nothing beyond size; same-size AUC is at or below chance.
