@@ -119,23 +119,25 @@ def frame(a, col, lw=1.5):
 
 # ======================= FIG A =======================
 cnn = pd.read_csv(V2R / "perday_cnn.csv"); lstm = pd.read_csv(V2R / "perday_lstm.csv")
-fig = plt.figure(figsize=(16, 14.5))
-gs = GridSpec(3, 3, figure=fig, height_ratios=[.8, 1, 1], hspace=.42, wspace=.3)
+fig = plt.figure(figsize=(16, 21))
+gs = GridSpec(4, 3, figure=fig, height_ratios=[1.05, 1, 1, 1], hspace=.45, wspace=.3)
 
-sub = gs[0, :].subgridspec(2, 10, wspace=.06, hspace=.12, width_ratios=[1, 1, 1, 1, .25, 1, 1, 1, 1, 1])
+# same three organoids as the Grad-CAM examples in Fig B
+EXAMPLES = ["BA1_96_1_H6_nosplit", "BA2_96_2_C3_nosplit", "BA2_96_2_E12_nosplit"]
+sub = gs[0, :].subgridspec(3, 10, wspace=.06, hspace=.1, width_ratios=[1, 1, 1, 1, .25, 1, 1, 1, 1, 1])
 INP = [("CNN standard / strong", False, False), ("CNN brightened", False, True), ("CNN bbox", True, False), ("CNN brightened bbox", True, True)]
-for i, o in enumerate(("BA1_96_1_B5_nosplit", "BA2_96_2_F12_nosplit")):
+for i, o in enumerate(EXAMPLES):
     col = GOOD if y[o] == 1 else BAD
     for j, (nm, bb, br) in enumerate(INP):
-        a = fig.add_subplot(sub[i, j]); im = show(o, 24, bb, br)
+        a = fig.add_subplot(sub[i, j]); im = show(o, 30, bb, br)
         if im is not None:
             a.imshow(im)
         frame(a, col)
         if i == 0:
-            a.set_title(nm + "\n(day 24)", fontsize=10)
+            a.set_title(nm + "\n(day 30)", fontsize=10)
         if j == 0:
-            a.set_ylabel(f"{short(o).replace('_96_', ' ')}\n{'Acceptable' if col == GOOD else 'Not Acceptable'} "
-                         f"({meta[o]['n_votes_good']}/{meta[o]['n_votes_total']})", fontsize=9, color=col)
+            a.set_ylabel(f"{short(o).replace('_96_', ' ')}\n{'Acc.' if col == GOOD else 'Not Acc.'} "
+                         f"{meta[o]['n_votes_good']}/{meta[o]['n_votes_total']}", fontsize=9, color=col)
             if i == 0:
                 tag(a, "a")
     for j, d in enumerate((3, 10, 17, 24, 30)):
@@ -148,7 +150,41 @@ for i, o in enumerate(("BA1_96_1_B5_nosplit", "BA2_96_2_F12_nosplit")):
         if i == 0:
             a.set_title(("LSTM sequence\n" if j == 0 else "\n") + f"day {d}", fontsize=10)
 
-a = fig.add_subplot(gs[1, 0]); tag(a, "b")
+# b: growth curves, rejects split into stalled vs overgrown (latest late-day size vs same-plate accepted median)
+a = fig.add_subplot(gs[1, :2]); tag(a, "b")
+FRAME = 575 ** 2
+acc_med = {(pl, d): LA.loc[[o for o in LA.index if y[o] == 1 and plate[o] == pl], d].median() for pl in plate.unique() for d in DAYS}
+kind = {}
+for o in LA.index:
+    if y[o] == 1:
+        kind[o] = "Acceptable"
+    else:
+        d = next((dd_ for dd_ in (30, 28, 24) if pd.notna(LA.loc[o].get(dd_))), None)
+        kind[o] = "Not Acc., overgrown" if d and LA.loc[o, d] > acc_med[(plate[o], d)] else "Not Acc., stalled"
+kind = pd.Series(kind)
+GC = {"Acceptable": GOOD, "Not Acc., stalled": BAD, "Not Acc., overgrown": "#b2182b"}
+for k, c in GC.items():
+    A_ = np.exp(LA.loc[kind.index[kind == k]]) / FRAME * 100
+    med, lo, hi = A_.median(), A_.quantile(.25), A_.quantile(.75)
+    a.fill_between(med.index, lo, hi, color=c, alpha=.18, lw=0)
+    a.plot(med.index, med, "o-", color=c, lw=2.4, ms=6, mec="k", mew=.5, ls="--" if "overgrown" in k else "-",
+           label=f"{k} (n={int((kind == k).sum())})")
+a.axvspan(14.5, 17.5, color="#fde7c8", zorder=0); a.text(16, .02, "groups split\n(days 15→17)", transform=a.get_xaxis_transform(), ha="center", fontsize=10, color="0.35")
+a.set_yscale("log"); a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+a.set_ylabel("Organoid area (% of frame), median ± IQR"); day_axis(a); a.legend(loc="upper left")
+a.set_title("Accepted organoids grow in a band; rejects stall or overgrow after day 15")
+
+a = fig.add_subplot(gs[1, 2]); tag(a, "c")
+d30 = pd.DataFrame({"a": LA[30], "y": y}).dropna()
+d30["fifth"] = pd.qcut(d30.a, 5, labels=["1\nsmallest", "2", "3", "4", "5\nlargest"])
+pb = (1 - d30.groupby("fifth").y.mean()) * 100
+a.bar(range(5), pb, color=[BAD, "0.75", "0.75", "0.75", "#b2182b"], edgecolor="k", lw=.6)
+for i, v in enumerate(pb):
+    a.text(i, v + 1.2, f"{v:.0f}%", ha="center", fontsize=10)
+a.set_xticks(range(5)); a.set_xticklabels(pb.index); a.set_xlabel("Day-30 size fifth (20% of organoids each)")
+a.set_ylabel("% Not Acceptable"); a.set_title(f"% rejected by day-30 size (n={len(d30)})\n→ size must be modelled two-way")
+
+a = fig.add_subplot(gs[2, 0]); tag(a, "d")
 b0 = cnn[cnn.model == "std"].sort_values("day")
 a.plot(b0.day, b0.flex_auc, "-", color="k", lw=2.6, label="two-way size (spline)")
 a.plot(b0.day, b0.size_auc, "--", color="0.5", lw=2, label="bigger = better size")
@@ -158,8 +194,8 @@ for k, lab, c, mk in CNN:
 a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC (4×10 CV)"); day_axis(a)
 a.set_title("Single-day CNNs vs size, same organoids"); a.legend(loc="upper left", ncol=1)
 
-a = fig.add_subplot(gs[1, 1]); tag(a, "c")
-W = ["3-13", "3-17", "3-24", "3-30"]; x = np.arange(4)
+a = fig.add_subplot(gs[2, 1]); tag(a, "e")
+W =["3-13", "3-17", "3-24", "3-30"]; x = np.arange(4)
 l0 = lstm[lstm.model == "LSTM last"].set_index("window").loc[W]
 a.plot(x, l0.flex_auc, "-", color="k", lw=2.6, label="two-way size + growth")
 a.plot(x, l0.size_auc, "--", color="0.5", lw=2, label="size + growth (linear)")
@@ -169,17 +205,7 @@ for k, c, mk in (("LSTM last", "#4d4d4d", "o"), ("LSTM mean", "#9e9ac8", "s")):
 a.set_xticks(x); a.set_xticklabels([f"days {w}" for w in W]); a.axhline(.5, color="0.7", ls=":", lw=1)
 a.set_ylim(.4, .95); a.set_ylabel("AUC (4×10 CV)"); a.set_title("Trajectory LSTM vs size history"); a.legend(loc="upper left")
 
-a = fig.add_subplot(gs[1, 2]); tag(a, "d")
-d30 = pd.DataFrame({"a": LA[30], "y": y}).dropna()
-d30["fifth"] = pd.qcut(d30.a, 5, labels=["1\nsmallest", "2", "3", "4", "5\nlargest"])
-pb = (1 - d30.groupby("fifth").y.mean()) * 100
-a.bar(range(5), pb, color=[BAD, "0.75", "0.75", "0.75", BAD], edgecolor="k", lw=.6)
-for i, v in enumerate(pb):
-    a.text(i, v + 1.2, f"{v:.0f}%", ha="center", fontsize=10)
-a.set_xticks(range(5)); a.set_xticklabels(pb.index); a.set_xlabel("Day-30 size fifth")
-a.set_ylabel("% Not Acceptable"); a.set_title(f"Size works both ways (day 30, n={len(d30)})")
-
-a = fig.add_subplot(gs[2, 0]); tag(a, "e")
+a = fig.add_subplot(gs[3, :2]); tag(a, "g")
 H = pd.concat([cnn, lstm.assign(day=lstm.max_day)])
 rows = [k for k, *_ in CNN] + ["LSTM last", "LSTM mean"]
 H["row"] = H.model
@@ -191,14 +217,14 @@ a.set_yticklabels(["CNN std", "CNN strong", "CNN bbox", "CNN br. bbox", "LSTM la
 a.set_xticklabels([f"{c:g}" for c in hm.columns], rotation=0, fontsize=8); a.set_xlabel("Day (LSTM: last day of window)"); a.set_ylabel("")
 a.set_title("Gain over two-way size + plate")
 
-a = fig.add_subplot(gs[2, 1]); tag(a, "f")
+a = fig.add_subplot(gs[2, 2]); tag(a, "f")
 for k, lab, c, mk in CNN:
     d = cnn[cnn.model == k].sort_values("day")
     a.plot(d.day, d.same, marker=mk, color=c, lw=1.6, ms=6, mec="k", mew=.5, label=lab)
 a.axhline(.5, color="0.5", ls="--", lw=1.2); a.set_ylim(.3, .85); day_axis(a)
 a.set_ylabel("AUC within same-size pairs (±10%)"); a.set_title("With size held fixed, CNNs are near chance"); a.legend(loc="upper left", ncol=2)
 
-a = fig.add_subplot(gs[2, 2]); tag(a, "g")
+a = fig.add_subplot(gs[3, 2]); tag(a, "h")
 p = oof_mean(RUNS / "base_effnet_kfold4x10_brightbbox/day_30/oof_predictions.csv")
 d = pd.DataFrame({"p": p, "a": LA[30], "y": y}).dropna()
 for lab, c, nm in ((1, GOOD, "Acceptable"), (0, BAD, "Not Acceptable")):
@@ -236,10 +262,10 @@ occ = pd.DataFrame(occ)
 order = ["original", "silhouette", "rim_texture_removed", "core_texture_removed", "no_organoid"]
 sns.barplot(data=occ, x="condition", y="auc", hue="setup", order=order, hue_order=["std", "strong"], palette=[S2[2], S2[1]],
             errorbar="sd", capsize=.08, edgecolor="k", linewidth=.6, ax=a)
-a.set_xticklabels(["original", "silhouette\nonly", "rim texture\nremoved", "core texture\nremoved", "organoid\nremoved"], fontsize=9)
+a.set_xticklabels(["original", "mask only\n(no texture)","rim texture\nremoved", "core texture\nremoved", "organoid\nremoved"], fontsize=9)
 a.axhline(.5, color="0.6", ls=":", lw=1); a.set_ylim(.3, .95); a.set_xlabel(""); a.set_ylabel("AUC (days 24/28/30)")
 h, _ = a.get_legend_handles_labels(); a.legend(h[:2], ["standard aug", "strong aug"], loc="upper right")
-a.set_title("The silhouette alone keeps the signal")
+a.set_title("The mask alone keeps the signal")
 
 a = fig.add_subplot(gs[0, 2]); tag(a, "c")
 for key, lab, c, mk in (("std", "standard aug", S2[2], "o"), ("strong", "strong aug", S2[1], "^"), ("bboxstd", "bbox crop", S2[3], "s")):
