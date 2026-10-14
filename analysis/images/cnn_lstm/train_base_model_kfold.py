@@ -232,13 +232,13 @@ def _run_fold(day, rep, fi, rep_seed, ids, tr_idx, te_idx, meta, train_tf, eval_
     itr = [tr[i] for i in it_idx]; iv = [tr[i] for i in iv_idx]
     train_ds = SingleDayOrganoidDataset(itr, meta, day, transform=train_tf,
                                         image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten, exact_day=args.exact_day)
+                                       brighten=args.brighten, exact_day=args.exact_day, mask_only=args.mask_only)
     val_ds = SingleDayOrganoidDataset(iv, meta, day, transform=eval_tf,
                                       image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten, exact_day=args.exact_day)
+                                       brighten=args.brighten, exact_day=args.exact_day, mask_only=args.mask_only)
     test_ds = SingleDayOrganoidDataset(te, meta, day, transform=eval_tf,
                                        image_type=args.image_type, bbox_crop=args.bbox_crop,
-                                       brighten=args.brighten, exact_day=args.exact_day)
+                                       brighten=args.brighten, exact_day=args.exact_day, mask_only=args.mask_only)
     if len(train_ds) == 0 or len(test_ds) == 0:
         return
     tl_labels = [s["label"] for s in train_ds.samples]
@@ -278,6 +278,8 @@ def main():
     ap.add_argument("--bbox-crop", action="store_true")
     ap.add_argument("--brighten", action="store_true",
                     help="Contrast-stretch each organoid's interior to 0..1 (see SingleDayOrganoidDataset).")
+    ap.add_argument("--mask-only", action="store_true",
+                    help="Train on the mask only (organoid black on the gray background): size + outline, no texture.")
     ap.add_argument("--exact-day", action="store_true",
                     help="Per day, use only organoids imaged ON that day (for cohorts with missing days, "
                          "e.g. data/cohorts/idor_main/full). Folds are built per day from those organoids.")

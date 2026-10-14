@@ -108,7 +108,8 @@ class SingleDayOrganoidDataset(Dataset):
     Uses the LSTM processed images (same as LSTM but picks one timepoint).
     """
     def __init__(self, organoid_ids, series_metadata, target_day, transform=None,
-                 image_type='std', bbox_crop=False, bbox_pad=10, brighten=False, exact_day=False):
+                 image_type='std', bbox_crop=False, bbox_pad=10, brighten=False, exact_day=False,
+                 mask_only=False):
         """
         bbox_crop: if True, crop each image to its mask bounding box (with bbox_pad
                    pixels of padding) before applying transforms. This removes the
@@ -121,6 +122,8 @@ class SingleDayOrganoidDataset(Dataset):
         exact_day: if True, skip organoids with no timepoint ON target_day instead of
                    using the nearest day (needed when days can be missing, e.g. the
                    edge-filtered cohort/full splits).
+        mask_only: if True, replace the image with its mask (organoid black on the
+                   178-gray background): size and outline only, no texture.
         """
         self.samples = []
 
@@ -142,8 +145,8 @@ class SingleDayOrganoidDataset(Dataset):
             if img_path is None or not Path(img_path).exists():
                 continue
             mask_path = best_tp.get('mask_paths', {}).get(image_type)
-            # mask is only required if bbox_crop or brighten is on
-            if (bbox_crop or brighten) and (mask_path is None or not Path(mask_path).exists()):
+            # mask is only required if bbox_crop, brighten or mask_only is on
+            if (bbox_crop or brighten or mask_only) and (mask_path is None or not Path(mask_path).exists()):
                 continue
 
             self.samples.append({
@@ -158,8 +161,10 @@ class SingleDayOrganoidDataset(Dataset):
         self.bbox_crop = bbox_crop
         self.bbox_pad = bbox_pad
         self.brighten = brighten
+        self.mask_only = mask_only
         print(f"  Loaded {len(self.samples)} samples for day ~{target_day}"
-              + ("  [bbox-crop enabled]" if bbox_crop else "") + ("  [brighten enabled]" if brighten else ""))
+              + ("  [bbox-crop enabled]" if bbox_crop else "") + ("  [brighten enabled]" if brighten else "")
+              + ("  [mask only]" if mask_only else ""))
     
     def __len__(self):
         return len(self.samples)
@@ -175,6 +180,11 @@ class SingleDayOrganoidDataset(Dataset):
             img = np.stack([img] * 3, axis=-1)
 
         img = img.astype(np.float32) / 255.0  # Normalize to [0,1]
+
+        if self.mask_only:
+            m = imread(sample["mask_path"])
+            m = (m[:, :, 0] if m.ndim == 3 else m) > 127
+            img = np.where(m[..., None], 0.0, BG_FILL_U8 / 255.0).astype(np.float32)
 
         if self.brighten:
             from scipy.ndimage import binary_erosion
