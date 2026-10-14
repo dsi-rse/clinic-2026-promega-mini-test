@@ -213,16 +213,32 @@ a.set_yticks(yy_); a.set_yticklabels([x[0] for x in LAD], fontsize=10); a.set_xl
 a.set_xlabel("AUC at day 30 (0.5 = chance; mean of 4-fold × 10-repeat CV, same 155 organoids)")
 a.set_title("Day 30: the best image model (0.88) only ties size with two cutoffs (0.87)", fontsize=13)
 
-# c: why two cutoffs - % rejected by size fifth
+# c: why two cutoffs - day-30 size distributions, accepted vs rejected
 a = fig.add_subplot(gs[1, 2]); tag(a, "c")
-d30 = pd.DataFrame({"a": LA[30], "y": y}).dropna()
-d30["fifth"] = pd.qcut(d30.a, 5, labels=False)
-pb = (1 - d30.groupby("fifth", observed=False).y.mean().values) * 100
-a.bar(range(5), pb, color=[BAD, "0.8", "0.8", "0.8", "#b2182b"], edgecolor="k", lw=.6)
-for i, v in enumerate(pb):
-    a.text(i, v + 1.2, f"{v:.0f}%", ha="center", fontsize=10)
-a.set_xticks(range(5)); a.set_xticklabels(["smallest\n20%", "", "middle\n20%", "", "largest\n20%"]); a.set_xlabel("Organoids sorted by day-30 size")
-a.set_ylabel("% rejected"); a.set_title("Why two cutoffs: rejects are\nthe smallest AND the largest")
+d30 = pd.DataFrame({"mm2": MM2(LA[30]), "k": kind}).dropna()
+acc = d30[d30.k == "accepted"].mm2
+lo, hi = acc.quantile([.05, .95])
+a.axvspan(lo, hi, color=GOOD, alpha=.08, zorder=0)
+a.text(np.sqrt(lo * hi), 1.62, "accepted 5–95%\n('normal size')", ha="center", va="top", fontsize=8.5, color=GOOD)
+rng = np.random.default_rng(0)
+lx = np.log10(acc.values); kde_x = np.linspace(np.log10(d30.mm2.min()) - .1, np.log10(d30.mm2.max()) + .1, 300)
+from scipy.stats import gaussian_kde
+dens = gaussian_kde(lx)(kde_x); dens = dens / dens.max() * .35
+a.fill_between(10 ** kde_x, 1 - dens, 1 + dens, color=GOOD, alpha=.35, lw=0)
+a.scatter(acc, 1 + rng.uniform(-.12, .12, len(acc)), s=10, color=GOOD, edgecolor="k", lw=.3, alpha=.8)
+for k in ("rejected, stalled", "rejected, overgrown"):
+    s = d30[d30.k == k].mm2
+    a.scatter(s, 0 + rng.uniform(-.15, .15, len(s)), s=30, color=KC[k], edgecolor="k", lw=.4, label=f"{k} (n={len(s)})")
+n_off = int(((kind != "accepted") & LA[30].reindex(kind.index).isna()).sum())
+a.set_xscale("log"); a.set_xticks([0.5, 1, 2, 4, 8]); a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+a.set_yticks([0, 1]); a.set_yticklabels([f"rejected\n(n={int((d30.k != 'accepted').sum())})", f"accepted\n(n={len(acc)})"]); a.set_ylim(-.55, 1.7)
+a.set_xlabel("Day-30 organoid area (mm²)")
+for k, xq, ha in (("rejected, stalled", .5, "center"), ("rejected, overgrown", .5, "center")):
+    s = d30[d30.k == k].mm2
+    a.text(s.median(), -.32, k.replace("rejected, ", "") + f" (n={len(s)})", ha=ha, va="top", fontsize=9, color=KC[k], fontweight="bold")
+a.set_title("Why two cutoffs: rejects sit on\nboth sides of the accepted range")
+if n_off:
+    a.text(.99, .02, f"+{n_off} rejects with no day-30 image\n(cut off at frame edge)", transform=a.transAxes, ha="right", va="bottom", fontsize=7.5, color="0.4")
 
 # d: growth curves
 a = fig.add_subplot(gs[2, 0]); tag(a, "d")
@@ -233,7 +249,7 @@ for k, c in KC.items():
     a.plot(med.index, med, "o-", color=c, lw=2.2, ms=5, mec="k", mew=.4, ls="--" if "over" in k else "-", label=f"{k} (n={int((kind == k).sum())})")
 a.axvspan(14.5, 17.5, color="#fde7c8", zorder=0)
 a.set_yscale("log"); a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_ylabel("Organoid area (mm²)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
+a.set_yticks([0.1, 0.2, 0.5, 1, 2, 5]); a.set_ylabel("Organoid area (mm²)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
 a.set_title("Rejects stall or overgrow;\ngroups split at days 15–17 (shaded)")
 
 # e: over time - image models vs size

@@ -7,7 +7,7 @@ Every panel title states its finding.
 **Fig A — `figA_models_and_performance`: what we ran and how well it works**
 - a: what each model gets, for the same 3 organoids used in Fig B (accepted / stalled reject / overgrown reject): size only (mask area), CNN whole image (also used with strong augmentation), CNN cropped, CNN cropped + brightened, LSTM image sequence
 - b: day-30 ladder — size models (one number per organoid) vs image models; best image model 0.88 ties size with two cutoffs 0.87
-- c: why two cutoffs — % rejected by day-30 size fifth (61 / 0 / 10 / 3 / 23%)
+- c: why two cutoffs — day-30 size distribution of accepted organoids vs each reject (stalled / overgrown), accepted 5–95% range shaded
 - d: growth curves — accepted vs stalled vs overgrown rejects; groups split at days 15–17
 - e: every day — image models never beat size; before day 20 they are worse
 - f: LSTM vs size + growth rate for each window — the LSTM adds nothing
