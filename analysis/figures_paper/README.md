@@ -7,7 +7,7 @@ Every panel title states its finding.
 **Fig 1 — `fig1_models_and_size`: the models work, and they work because of size**
 - a: what each model gets, for the same 3 organoids used in Fig 2 (accepted / stalled reject / overgrown reject): size only (mask area), CNN whole image, CNN cropped, CNN cropped + brightened, LSTM image series
 - b: day-30 balanced accuracy and AUC of the image models (mean ± SD over 10 CV repeats); best = CNN cropped + brightened, AUC 0.88, balanced accuracy 0.78
-- c: confusion matrix of the best model at day 30 (94% of Acceptable and 63% of Not Acceptable correct)
+- c: confusion matrix of the best model at day 30 (94% of Acceptable and 63% of Not Acceptable correct; predicted Acceptable = P(Acceptable) ≥ 0.5, expert label = ≥ 4/5 votes)
 - d: every day — image models only work from ~day 20; size alone is as good or better
 - e: day-30 size density — Not Acceptable organoids are too small or too big
 - f: best image model vs size alone, same organoids and folds — size with two cutoffs: AUC 0.87, balanced accuracy 0.83

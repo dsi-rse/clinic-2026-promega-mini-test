@@ -277,7 +277,7 @@ for r_ in range(2):
         a.text(c_, r_, f"{pct[r_, c_]:.0f}%\n(n ≈ {cm[r_, c_]:.0f})", ha="center", va="center", fontsize=12,
                color="w" if pct[r_, c_] > 55 else "k")
 a.set_xticks([0, 1]); a.set_xticklabels(["Acceptable", "Not Acc."]); a.set_yticks([0, 1]); a.set_yticklabels(["Acceptable", "Not Acc."])
-a.set_xlabel("Predicted (P ≥ 0.5)"); a.set_ylabel("Expert label (≥ 4/5 votes)")
+a.set_xlabel("Predicted"); a.set_ylabel("Expert label")
 a.set_title("Best model, day 30: % of each expert class\n(mean organoid count per CV repeat)")
 
 # d: over time
