@@ -3,7 +3,7 @@
          matrix, over time, too small or too big, best CNN vs size, LSTM vs size + growth)
   Fig 2  what the models look at (Grad-CAM, test-time ablation, mask-only retraining, rescaling,
          LSTM day blanking, the rejects no model catches)
-  Fig S  supplement (growth curves, every model every day, borderline-vote robustness, % caught, shape, day-30 ladder)
+  Fig S  supplement (every model every day, borderline-vote robustness, % caught, shape, day-30 ladder, test-time edits, LSTM blanking)
 Also writes day30_metrics.csv and rejects_by_method.csv.
 
 All vote counts are regular-image votes only (cohort meta, efd3ff7); labels are the official
@@ -11,7 +11,7 @@ All vote counts are regular-image votes only (cohort meta, efd3ff7); labels are 
   V2 (data/cohorts/idor_main/full, 155-198 organoids/day): per-day CNN + LSTM OOF predictions,
      perday_eval.py tables, LSTM day dropout, shape features, mask areas.
   V1 (data/cohorts/idor_main/series, 140 organoids): occlusion / rescale / Grad-CAM (Fig 2 a-c, e).
-  Borderline run (data/cohorts/idor_main_minvotes3): model_plots/borderline_mv3/borderline_vs_clear.csv (Fig S c).
+  Borderline run (data/cohorts/idor_main_minvotes3): model_plots/borderline_mv3/borderline_vs_clear.csv (Fig S b).
 
 Run from the repo root on the cluster (core_env):
     python analysis/figures_paper/make_paper_figs.py <out_dir>
