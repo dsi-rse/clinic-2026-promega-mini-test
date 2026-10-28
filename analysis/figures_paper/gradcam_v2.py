@@ -11,7 +11,8 @@ The organoid mask in input coordinates comes from the same dataset code with mas
 through the identical crop / letterbox / resize as the image.
 
 Run from the repo root on the cluster (core_env, GPU):
-    python analysis/figures_paper/gradcam_v2.py <out_dir>
+    python analysis/figures_paper/gradcam_v2.py <out_dir>               # all organoids, Fig 2 b + Fig S h maps
+    python analysis/figures_paper/gradcam_v2.py <out_dir> --confident   # then: Fig 2 a maps (gradcam_examples_confident.npz)
 """
 import gc, json, sys
 from pathlib import Path
@@ -60,6 +61,19 @@ EXAMPLES = [typical("accepted", lambda o: votes[o] == 5 and (P30.loc[o] > .6).al
             typical("overgrown", lambda o: votes[o] <= 1 and o != "BA2_96_2_E12_nosplit")]
 print("examples:", EXAMPLES, [kind[o] for o in EXAMPLES], [votes[o] for o in EXAMPLES])
 
+# --confident (run after the full pass): maps only for the clearest correct call each way, i.e. the largest
+# worst-case margin |P - 0.5| on the correct side across all 4 CNNs at day 30 (CV-repeat-1 fold models = the
+# maps shown), among organoids that also have a day-10 image. The CNNs' P is squeezed (0.27-0.74 at day 30),
+# so this means "most confidently ranked", not high P.
+CONFIDENT = sys.argv[2:3] == ["--confident"]
+if CONFIDENT:
+    FC = pd.read_csv(OUT / "gradcam_focus.csv")
+    F30 = FC[FC.day == 30].pivot(index="organoid_id", columns="model", values="prob").dropna()
+    F30 = F30.loc[F30.index.isin(set(FC[FC.day == 10].organoid_id))]
+    marg = pd.Series({o: ((F30.loc[o] - .5) * (1 if y[o] else -1)).min() for o in F30.index})
+    EXAMPLES = [marg[[o for o in marg.index if y[o] == 1]].idxmax(), marg[[o for o in marg.index if y[o] == 0]].idxmax()]
+    print("confident examples:", EXAMPLES, marg[EXAMPLES].round(3).tolist())
+
 
 def gradcam(model, xb):
     """Grad-CAM for a batch. In eval mode the samples are independent, so backpropagating the sum of the
@@ -82,9 +96,13 @@ def gradcam(model, xb):
 
 rows, ex = [], {}
 for v, (bbox, bright) in VARIANTS.items():
-    for d in DAYS:
+    for d in (EX_DAYS if CONFIDENT else DAYS):
         for fold in sorted((RUNS / f"base_effnet_kfold4x10_{v}/day_{d}/rep_1").glob("fold_*")):
             ids = json.load(open(fold / "test_ids.json"))
+            if CONFIDENT:
+                ids = [i for i in ids if i in EXAMPLES]
+                if not ids:
+                    continue
             model = BaselineEfficientNet().to(DEV)
             ck = torch.load(next(fold.glob("model_day_*.pth")), map_location=DEV)
             model.load_state_dict(ck["state_dict"]); model.eval()
@@ -111,6 +129,8 @@ for v, (bbox, bright) in VARIANTS.items():
             gc.collect(); torch.cuda.empty_cache()
         print(v, d, len(rows), torch.cuda.is_available(), flush=True)
 
-pd.DataFrame(rows).to_csv(OUT / "gradcam_focus.csv", index=False)
-np.savez_compressed(OUT / "gradcam_examples.npz", examples=np.array(EXAMPLES), **ex)
-print("wrote", OUT / "gradcam_focus.csv", len(rows), "rows;", len(ex) // 3, "example maps")
+if not CONFIDENT:
+    pd.DataFrame(rows).to_csv(OUT / "gradcam_focus.csv", index=False)
+npz = OUT / ("gradcam_examples_confident.npz" if CONFIDENT else "gradcam_examples.npz")
+np.savez_compressed(npz, examples=np.array(EXAMPLES), **ex)
+print("wrote", npz, len(ex) // 3, "example maps" + ("" if CONFIDENT else f"; gradcam_focus.csv {len(rows)} rows"))

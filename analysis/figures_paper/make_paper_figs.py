@@ -285,7 +285,7 @@ for r_ in range(2):
                color="w" if pct[r_, c_] > 55 else "k")
 a.set_xticks([0, 1]); a.set_xticklabels(["Acceptable", "Not Acc."]); a.set_yticks([0, 1]); a.set_yticklabels(["Acceptable", "Not Acc."])
 a.set_xlabel("Predicted"); a.set_ylabel("Expert label")
-a.set_title("Best model, day 30: % of each expert class\n(mean organoid count per CV repeat)")
+a.set_title("CNN cropped + brightened, day 30: % of each\nexpert class (mean organoid count per CV repeat)")
 
 # d: over time
 a = fig.add_subplot(gs[1, 3]); tag(a, "d")
@@ -350,36 +350,49 @@ save(fig, "fig1_models_and_size")
 # ======================= FIG 2: what the models look at =======================
 fig = plt.figure(figsize=(19, 21))
 gs = GridSpec(3, 1, figure=fig, height_ratios=[1.45, 1, .85], hspace=.4)
-top = gs[0].subgridspec(1, 3, width_ratios=[2.1, .08, 1], wspace=.25)
+top = gs[0].subgridspec(1, 3, width_ratios=[1.5, .1, 1], wspace=.25)
 
 # a: Grad-CAM table - rows = the 4 CNNs (current models, own input each), columns = organoid x day
 GMOD = [("std", "CNN,\nwhole image"), ("strong", "CNN, whole\n+ strong aug."), ("bbox", "CNN,\ncropped"), ("brightbbox", "CNN, cropped\n+ brightened")]
-sub = top[0].subgridspec(len(GMOD), 2 * len(EXAMPLES), wspace=.04, hspace=.06)
 jet = plt.get_cmap("jet")
-for i, (v, vn) in enumerate(GMOD):
-    for j, (o, d) in enumerate([(o, d) for o in EXAMPLES for d in ("10", "30")]):
-        a = fig.add_subplot(sub[i, j]); col = GOOD if y[o] == 1 else BAD
-        k = f"{o}|{d}|{v}"
-        if GCX is not None and f"{k}|img" in GCX.files:
-            img, cam = GCX[f"{k}|img"].astype(float), GCX[f"{k}|cam"].astype(float)
-            a.imshow(np.clip(.55 * img + .45 * jet(cam)[..., :3], 0, 1))
-            a.text(.03, .04, f"P={float(GCX[f'{k}|p']):.2f}", transform=a.transAxes, fontsize=7.5, color="w",
-                   bbox=dict(fc="k", ec="none", alpha=.55, pad=1))
-        elif GCX is None:   # placeholder: the model's own input, no heat map yet
-            im = show(o, float(d), v in ("bbox", "brightbbox"), v == "brightbbox")
-            if im is not None:
-                a.imshow(im)
-            a.text(.5, .5, "Grad-CAM\npending", transform=a.transAxes, ha="center", va="center", fontsize=8, color="0.3",
-                   bbox=dict(fc="w", ec="none", alpha=.7, pad=1))
-        frame(a, COL[v], 2)
-        if i == 0:
-            a.set_title(f"day {d}", fontsize=10)
-            if d == "10":
-                a.text(1.02, 1.32, exlabel(o).replace("\n", " · ", 1), transform=a.transAxes, ha="center", fontsize=9, color=col)
-        if j == 0:
-            a.set_ylabel(vn, fontsize=10, color=COL[v], fontweight="bold")
+
+
+def gc_table(spec, npz, orgs, heads, letter):
+    """Grad-CAM tiles: rows = models, columns = (organoid, day 10 / 30); P and right / wrong in each tile."""
+    sub = spec.subgridspec(len(GMOD), 2 * len(orgs), wspace=.04, hspace=.06)
+    for i, (v, vn) in enumerate(GMOD):
+        for j, (o, d) in enumerate([(o, d) for o in orgs for d in ("10", "30")]):
+            a = fig.add_subplot(sub[i, j]); col = GOOD if y[o] == 1 else BAD
+            k = f"{o}|{d}|{v}"
+            if npz is not None and f"{k}|img" in npz.files:
+                img, cam = npz[f"{k}|img"].astype(float), npz[f"{k}|cam"].astype(float)
+                a.imshow(np.clip(.55 * img + .45 * jet(cam)[..., :3], 0, 1))
+                p = float(npz[f"{k}|p"]); ok = (p >= .5) == (y[o] == 1)
+                a.text(.03, .04, f"P={p:.2f} {'✓' if ok else '✗'}", transform=a.transAxes, fontsize=8, color="w",
+                       bbox=dict(fc=GOOD if ok else BAD, ec="none", alpha=.85, pad=1.2))
+            else:   # placeholder: the model's own input, no heat map yet
+                im = show(o, float(d), v in ("bbox", "brightbbox"), v == "brightbbox")
+                if im is not None:
+                    a.imshow(im)
+                a.text(.5, .5, "Grad-CAM\npending", transform=a.transAxes, ha="center", va="center", fontsize=8, color="0.3",
+                       bbox=dict(fc="w", ec="none", alpha=.7, pad=1))
+            frame(a, COL[v], 2)
             if i == 0:
-                a.text(-0.55, 1.3, "a", transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
+                a.set_title(f"day {d}", fontsize=10)
+                if d == "10":
+                    v_ = meta[o]
+                    a.text(1.02, 1.3, f"{heads[o]}\n{short(o).replace('_96_', ' ')} ({v_['n_votes_good']}/{v_['n_votes_total']} Acc. votes)",
+                           transform=a.transAxes, ha="center", fontsize=9, color=col)
+            if j == 0:
+                a.set_ylabel(vn, fontsize=10, color=COL[v], fontweight="bold")
+                if i == 0:
+                    a.text(-0.55, 1.3, letter, transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
+
+
+_cf = GC / "gradcam_examples_confident.npz"
+GCC = np.load(_cf) if _cf.exists() else None
+CONF = [str(o) for o in GCC["examples"]] if GCC is not None else ["BA2_96_1_F11_nosplit", "BA2_96_1_B3_nosplit"]   # gradcam_v2.py --confident
+gc_table(top[0], GCC, CONF, {CONF[0]: "clearest Acceptable call (all 4 CNNs)", CONF[1]: "clearest Not Acceptable call (all 4 CNNs)"}, "a")
 
 # b: heat on the organoid vs background, by day (all organoids, current models)
 a = fig.add_subplot(top[2]); tag(a, "b")
@@ -435,12 +448,13 @@ for cond, ls, nm in (("scaled_1.4", "-", "enlarged 1.4×"), ("scaled_0.7", "--",
     med, lo, hi = dl.median(), dl.quantile(.25), dl.quantile(.75)
     a.fill_between(med.index, lo, hi, color=COL["std"], alpha=.15, lw=0)
     a.plot(med.index, med, marker="o", ls=ls, color=COL["std"], lw=2, ms=5, mec="k", mew=.4, label=nm)
-a.axhline(0, color="0.6", ls=":", lw=1); day_axis(a); a.set_ylabel("change in P(Acceptable)\n(CNN, whole image)"); a.legend(loc="lower left", fontsize=8.5)
+a.axhline(0, color="0.6", ls=":", lw=1); day_axis(a); a.set_ylabel("change in P(Acceptable) after resizing\n(CNN, whole image; median, IQR)"); a.legend(loc="lower left", fontsize=8.5)
 a.set_title("Only resize the organoid:\nbigger → 'more acceptable'")
 
 # g: what no model catches
 sub = gs[2].subgridspec(2, len(MISSED), wspace=.05, hspace=.3)
 good = [o for o in meta if y[o] == 1]
+PB = {d: oof("brightbbox", str(d)).groupby("organoid_id").prob_acceptable.mean().to_dict() for d in (24, 28, 30)}
 for i, b in enumerate(MISSED):
     d = next(dd_ for dd_ in (30, 28, 24) if pd.notna(LA.loc[b].get(dd_)))
     m = min([o for o in good if plate[o] == plate[b] and pd.notna(LA.loc[o].get(d))], key=lambda o: abs(LA.loc[o, d] - LA.loc[b, d]))
@@ -450,6 +464,8 @@ for i, b in enumerate(MISSED):
             a.imshow(im)
         frame(a, col, 2.2)
         v = meta[o]
+        p_ = PB[d].get(o, np.nan)   # best CNN, mean OOF P over the 10 CV repeats
+        a.text(.03, .04, f"best CNN: P={p_:.2f}", transform=a.transAxes, fontsize=8, color="w", bbox=dict(fc="k", ec="none", alpha=.6, pad=1.2))
         a.set_title(f"{short(o).replace('_96_', ' ')} day {d}\n{v['n_votes_good']}/{v['n_votes_total']} Acc. votes", fontsize=9, color=col)
         if i == 0:
             a.set_ylabel(nm, fontsize=10, color=col)
@@ -461,8 +477,8 @@ for i, b in enumerate(MISSED):
 save(fig, "fig2_what_models_look_at")
 
 # ======================= SUPPLEMENT =======================
-fig = plt.figure(figsize=(23, 11))
-gs = GridSpec(2, 4, figure=fig, hspace=.45, wspace=.55)
+fig = plt.figure(figsize=(23, 20))
+gs = GridSpec(3, 4, figure=fig, height_ratios=[1, 1, 1.25], hspace=.45, wspace=.55)
 
 a = fig.add_subplot(gs[0, 0]); tag(a, "a")
 for k in ("std", "strong", "bbox", "brightbbox"):
@@ -553,4 +569,6 @@ a.set_xticks(range(len(out))); a.set_xticklabels([f"{d:g}" for d in out[:, 0]], 
 a.axhline(0, color="0.5", lw=.8); a.set_ylabel("change in LSTM AUC"); a.set_ylim(-.06, .06)
 a.set_title(f"LSTM: blanking any one day\nchanges AUC by ≤ {np.abs(out[:, 1]).max():.2f}")
 
+# h: Grad-CAM on typical organoids (the Fig 1 a examples): uncertain and missed calls
+gc_table(gs[2, :3], GCX, EXAMPLES, dict(zip(EXAMPLES, ["typical accepted", "typical stalled reject", "typical overgrown reject"])), "h")
 save(fig, "figS_supplement")

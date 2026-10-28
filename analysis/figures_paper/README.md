@@ -15,13 +15,13 @@ Every panel title states its finding.
 - h: LSTM vs size + growth rate for each window — the image series adds nothing
 
 **Fig 2 — `fig2_what_models_look_at`: what the models look at**
-- a: Grad-CAM table, current models (`gradcam_v2.py`): rows = the 4 CNNs, each on its own input (whole image at true aspect ratio, cropped, cropped + brightened); columns = the 3 example organoids at days 10 and 30; P(Acceptable) in each tile
+- a: Grad-CAM table, current models (`gradcam_v2.py --confident`): rows = the 4 CNNs, each on its own input (whole image at true aspect ratio, cropped, cropped + brightened); columns = the clearest correct Acceptable (BA2_96_1_F11) and Not Acceptable (BA2_96_1_B3) call across all 4 CNNs at day 30 (largest worst-case margin from 0.5), at days 10 and 30; P(Acceptable) and right / wrong in each tile. The CNNs' P is squeezed (0.27–0.74 at day 30), so 'clearest' means most confidently ranked, not high P
 - b: % of the Grad-CAM heat on the organoid, by day, all organoids (dotted = the organoid's share of the image = no focus) — whole-image CNNs only look at the organoid once they start to work (~day 17); the cropped CNNs, where the organoid fills the image, are on it from day 3
 - c: no texture needed — CNNs retrained on the mask alone vs on the image (day 30), and the organoid erased from the test image (→ chance)
 - d: resizing the same organoid moves the prediction (bigger → more acceptable from day 17)
-- e: the 7 of 33 rejects no method catches, next to same-plate accepted organoids of the same size
+- e: the 7 of 33 rejects no method catches, next to same-plate accepted organoids of the same size; best-CNN P (mean of 10 CV repeats) in each tile — the model scores each pair about the same
 
-Example organoids (Fig 1 a, Fig 2 a; picked by a fixed rule in `gradcam_v2.py`: closest to the group's median day-30 size, clear votes): BA1_96_1_A7 accepted (5/5), BA1_96_1_G1 stalled (0/5), BA2_96_2_C6 overgrown (1/5).
+Example organoids (Fig 1 a, Fig S h; picked by a fixed rule in `gradcam_v2.py`: closest to the group's median day-30 size, clear votes): BA1_96_1_A7 accepted (5/5), BA1_96_1_G1 stalled (0/5), BA2_96_2_C6 overgrown (1/5).
 
 **Fig S — `figS_supplement`**
 - a: every CNN and mask-only CNN, every day, against size
@@ -31,6 +31,7 @@ Example organoids (Fig 1 a, Fig 2 a; picked by a fixed rule in `gradcam_v2.py`: 
 - e: every model at day 30 (AUC)
 - f: test-time edits of the trained CNNs (mask only, inside texture removed, organoid removed)
 - g: LSTM day blanking — no single day changes AUC by more than 0.02
+- h: Grad-CAM table for the typical organoids of Fig 1 a (A7 / G1 / C6): uncertain calls and the overgrown reject every CNN misses
 
 Colours: one per model, used for its image borders, labels, lines and bars — size charcoal (other size models warm grays), CNN whole image olive,
 whole + strong aug. dusty blue, cropped walnut, cropped + brightened (best) mustard, LSTM plum, mask-only CNNs hatched sand.
