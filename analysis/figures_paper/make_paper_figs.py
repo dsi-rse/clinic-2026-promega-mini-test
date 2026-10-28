@@ -44,7 +44,7 @@ plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 11, "axes.labels
                      "xtick.labelsize": 10, "ytick.labelsize": 10, "legend.fontsize": 9, "legend.frameon": False,
                      "savefig.dpi": 300, "savefig.bbox": "tight"})
 S2 = sns.color_palette("Set2")
-GOOD, BAD = "#5b72b0", "#e5603b"
+GOOD, BAD = "#2A7F8E", "#C8553D"   # labels only: Acceptable teal, Not Acceptable burnt orange
 CNN = [("std", "CNN standard", S2[2], "o"), ("strong", "CNN strong aug", S2[1], "^"),
        ("bbox", "CNN bbox crop", S2[3], "s"), ("brightbbox", "CNN bright. bbox", S2[5], "D")]
 DAYS = [3, 6, 8, 10, 13, 15, 17, 20.5, 24, 28, 30]
@@ -125,10 +125,10 @@ def frame(a, col, lw=1.5):
 
 # ---------- shared names / colours ----------
 cnn = pd.read_csv(V2R / "perday_cnn.csv"); lstm = pd.read_csv(V2R / "perday_lstm.csv")
-SIZE1, SIZE2, SIZEG = "0.72", "0.25", "0.45"          # grays: size one cutoff / two cutoffs / + growth
+SIZE1, SIZE2, SIZEG = "#A39E93", "#3D3D3D", "#6F6A60"   # warm grays: size one cutoff / two cutoffs / + growth
 NAMES = {"std": "CNN, whole image", "strong": "CNN, whole image\n+ strong augment.", "bbox": "CNN, cropped to organoid",
          "brightbbox": "CNN, cropped +\nbrightened", "LSTM mean": "LSTM, image\nsequence days 3–30"}
-COL = {"std": S2[2], "strong": S2[1], "bbox": S2[3], "brightbbox": S2[5], "LSTM mean": "#6a51a3"}
+COL = {"std": "#B8C48E", "strong": "#8A9A5B", "bbox": "#5E6B3A", "brightbbox": "#E0A526", "LSTM mean": "#6B4E71"}   # CNNs olive -> avocado, best mustard, LSTM plum
 MM2 = lambda la: np.exp(la) * 81e-6   # mask pixels at 9 um/px (all_data ar_target_um_per_px) -> mm^2
 EXAMPLES = ["BA1_96_1_H6_nosplit", "BA2_96_2_C3_nosplit", "BA2_96_2_E12_nosplit"]   # same organoids as the Grad-CAM panel
 EXNOTE = {"BA1_96_1_H6_nosplit": "accepted", "BA2_96_2_C3_nosplit": "rejected, stalled", "BA2_96_2_E12_nosplit": "rejected, overgrown"}
@@ -161,7 +161,7 @@ for o in LA.index:
         d = next((dd_ for dd_ in (30, 28, 24) if pd.notna(LA.loc[o].get(dd_))), None)
         kind[o] = "rejected, overgrown" if d and LA.loc[o, d] > acc_med[(plate[o], d)] else "rejected, stalled"
 kind = pd.Series(kind)
-KC = {"accepted": GOOD, "rejected, stalled": BAD, "rejected, overgrown": "#b2182b"}
+KC = {"accepted": GOOD, "rejected, stalled": BAD, "rejected, overgrown": "#7A2E1F"}
 
 
 # ---------- per-repeat metrics straight from the OOF predictions ----------
@@ -212,14 +212,14 @@ def mask_auc(v, d):
     return float(np.mean([roc_auc_score(g.true_label, g.prob_acceptable) for _, g in o.groupby("repeat")]))
 
 
-COL.update({"mask": "#d9d9d9", "maskbbox": "#a6a6a6"})
+COL.update({"mask": "#DDD6C1", "maskbbox": "#B5AA8C"})
 MASK_DAYS = ["17", "20.5", "24", "28", "30"]
 SHORTN = {"std": "CNN\nwhole image", "strong": "CNN whole\n+ strong aug.", "bbox": "CNN\ncropped", "brightbbox": "CNN cropped\n+ brightened",
           "LSTM mean": "LSTM\nimage series"}
 
 # ======================= FIG 1: the models work, and they work because of size =======================
-fig = plt.figure(figsize=(16, 22))
-gs = GridSpec(4, 3, figure=fig, height_ratios=[1.15, 1, 1, 1], hspace=.45, wspace=.32)
+fig = plt.figure(figsize=(20, 17))
+gs = GridSpec(3, 4, figure=fig, height_ratios=[1.15, 1, 1], hspace=.45, wspace=.36)
 
 # a: model inputs, same 3 organoids
 sub = gs[0, :].subgridspec(3, 10, wspace=.06, hspace=.1, width_ratios=[1, 1, 1, 1, .2, 1, 1, 1, 1, 1])
@@ -265,13 +265,13 @@ a.set_xticks(x); a.set_xticklabels([SHORTN[k] for k in IMG], fontsize=10); a.set
 h, l = a.get_legend_handles_labels()
 from matplotlib.patches import Patch
 a.legend([Patch(fc="w", ec="k"), Patch(fc="w", ec="k", hatch="..")], ["balanced accuracy", "AUC"], loc="upper left", fontsize=9.5)
-a.set_title(f"Day 30: the best model (CNN cropped + brightened) reaches AUC {M['brightbbox']['auc']:.2f}, "
-            f"balanced accuracy {M['brightbbox']['bal']:.2f}\n(mean ± SD over 10 CV repeats, {M['brightbbox']['n']} organoids)", fontsize=12)
+a.set_title(f"Day 30: the best model (CNN cropped + brightened) reaches AUC {M['brightbbox']['auc']:.2f},\n"
+            f"balanced accuracy {M['brightbbox']['bal']:.2f} (mean ± SD over 10 CV repeats, {M['brightbbox']['n']} organoids)", fontsize=12)
 
 # c: confusion matrix of the best model
-a = fig.add_subplot(gs[1, 2]); a.text(-0.3, 1.06, "c", transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
+a = fig.add_subplot(gs[1, 2]); a.text(-0.2, 1.06, "c", transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
 cm = M["brightbbox"]["cm"]; pct = cm / cm.sum(axis=1, keepdims=True) * 100
-a.imshow(pct, cmap="Blues", vmin=0, vmax=100)
+a.imshow(pct, cmap=matplotlib.colors.LinearSegmentedColormap.from_list("teal", ["#FBF7EE", GOOD]), vmin=0, vmax=100)
 for r_ in range(2):
     for c_ in range(2):
         a.text(c_, r_, f"{pct[r_, c_]:.0f}%\n(n ≈ {cm[r_, c_]:.0f})", ha="center", va="center", fontsize=12,
@@ -281,7 +281,7 @@ a.set_xlabel("Predicted (P ≥ 0.5)"); a.set_ylabel("Expert label (≥ 4/5 votes
 a.set_title("Best model, day 30: % of each expert class\n(mean organoid count per CV repeat)")
 
 # d: over time
-a = fig.add_subplot(gs[2, 0]); tag(a, "d")
+a = fig.add_subplot(gs[1, 3]); tag(a, "d")
 b0 = cnn[cnn.model == "brightbbox"].sort_values("day")
 a.plot(b0.day, b0.flex_auc, "-", color=SIZE2, lw=3, label="size alone (two cutoffs)")
 for k in ("std", "strong", "bbox", "brightbbox"):
@@ -295,34 +295,19 @@ a.legend(loc="upper left", fontsize=7.5)
 a.set_title("Image models only work from ~day 20;\nsize alone is as good or better every day")
 
 # e: too small or too big
-a = fig.add_subplot(gs[2, 1]); tag(a, "e")
+a = fig.add_subplot(gs[2, 0]); tag(a, "e")
 from scipy.stats import gaussian_kde
 d30 = pd.DataFrame({"mm2": MM2(LA[30]), "y": y}).dropna()
 xs_ = np.linspace(np.log10(d30.mm2.min()) - .15, np.log10(d30.mm2.max()) + .15, 400)
 for lab_, c, nm in ((1, GOOD, "Acceptable"), (0, BAD, "Not Acceptable")):
     v = np.log10(d30[d30.y == lab_].mm2.values); dens = gaussian_kde(v)(xs_)
     a.fill_between(10 ** xs_, dens, color=c, alpha=.3, lw=0); a.plot(10 ** xs_, dens, color=c, lw=2.2, label=f"{nm} (n={len(v)})")
-    a.plot(10 ** v, np.full(len(v), -.06 if lab_ else -.14), "|", color=c, ms=9, mew=1.2)
-a.axhline(0, color="0.6", lw=.8)
 a.set_xscale("log"); a.set_xticks([0.5, 1, 2, 4, 8]); a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_xlabel("Day-30 organoid area (mm²)"); a.set_ylabel("Density"); a.set_ylim(bottom=-.2); a.legend(loc="upper right", fontsize=8.5)
+a.set_xlabel("Day-30 organoid area (mm²)"); a.set_ylabel("Density"); a.set_ylim(bottom=0); a.legend(loc="upper right", fontsize=8.5)
 a.set_title("Not Acceptable organoids are\ntoo small or too big")
 
-# f: the best model follows size, both ways
-a = fig.add_subplot(gs[2, 2]); tag(a, "f")
-p = ob.groupby("organoid_id").prob_acceptable.mean()
-d = pd.DataFrame({"p": p, "a": LA[30], "k": kind}).dropna()
-for k, c in KC.items():
-    s = d[d.k == k]; a.scatter(MM2(s.a), s.p, s=22, color=c, edgecolor="k", lw=.4, alpha=.85, label=k)
-bins = pd.qcut(d.a, 8, labels=False); bm = d.groupby(bins).agg(a=("a", "median"), p=("p", "mean"))
-a.plot(MM2(bm.a), bm.p, "-", color="k", lw=2, label="mean, by size eighth")
-a.set_xscale("log"); a.set_xticks([0.5, 1, 2, 4, 8]); a.axhline(.5, color="0.6", ls="--", lw=1)
-a.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_xlabel("Day-30 organoid area (mm²)"); a.set_ylabel("Best CNN P(Acceptable)"); a.legend(loc="lower right", fontsize=7.5)
-a.set_title("The best CNN's prediction tracks size:\nlow when small, dropping again when very big")
-
 # g: best image model vs size alone
-a = fig.add_subplot(gs[3, :2]); tag(a, "g")
+a = fig.add_subplot(gs[2, 1:3]); tag(a, "f")
 G_ = [("size, one cutoff\n(bigger = better)", "size1", SIZE1), ("size, two cutoffs\n(too small or too big = bad)", "size2", SIZE2),
       ("best image model\n(CNN cropped + brightened)", "brightbbox", COL["brightbbox"])]
 x = np.arange(len(G_))
@@ -333,11 +318,10 @@ for off, met, hatch in ((-w / 2, "bal", None), (w / 2, "auc", "..")):
         a.text(xi, vi + ei + .008, f"{vi:.2f}", ha="center", fontsize=10)
 a.set_xticks(x); a.set_xticklabels([n for n, *_ in G_], fontsize=10); a.set_ylim(.5, 1); a.set_ylabel("Day-30 score")
 a.legend([Patch(fc="w", ec="k"), Patch(fc="w", ec="k", hatch="..")], ["balanced accuracy", "AUC"], loc="upper left", fontsize=9.5)
-a.set_title(f"One number (area, two cutoffs) matches the best image model on AUC and beats it on balanced accuracy\n(same {M['size2']['n']} organoids and CV folds; "
-            f"CNN on top of size + plate adds {cnn[(cnn.model == 'brightbbox') & (cnn.day == 30)].gain_flex.iloc[0]:+.2f} AUC)", fontsize=12)
+a.set_title(f"One number (area, two cutoffs) matches the best image model on AUC\nand beats it on balanced accuracy (same {M['size2']['n']} organoids and folds)", fontsize=12)
 
 # h: does the LSTM add anything?
-a = fig.add_subplot(gs[3, 2]); tag(a, "h")
+a = fig.add_subplot(gs[2, 3]); tag(a, "g")
 W = ["3-13", "3-17", "3-24", "3-30"]; x = np.arange(4)
 a.plot(x, l0.flex_auc, "-", color=SIZEG, lw=3, marker="o", ms=6, label="size + growth rate")
 a.plot(x, l0.auc, "-", color=COL["LSTM mean"], lw=2.2, marker="s", ms=7, mec="k", mew=.5, label="LSTM, image series")
@@ -348,7 +332,7 @@ save(fig, "fig1_models_and_size")
 
 # ======================= FIG 2: what the models look at =======================
 fig = plt.figure(figsize=(18, 19))
-gs = GridSpec(3, 1, figure=fig, height_ratios=[1.25, 1, .85], hspace=.38)
+gs = GridSpec(3, 1, figure=fig, height_ratios=[1.25, 1, .85], hspace=.45)
 top = gs[0].subgridspec(1, 3, width_ratios=[2, .05, 1], wspace=.25)
 
 # a: Grad-CAM examples
@@ -384,25 +368,9 @@ a.text(30.5, 1.05, "no focus", fontsize=8, color="0.4", ha="right", va="bottom")
 a.set_ylabel("Grad-CAM heat on organoid ÷ background\n(per pixel)"); a.legend(loc="lower right", fontsize=8.5)
 a.set_title("The CNNs only look at the organoid\nfrom day ~17, when they start to work")
 
-mid = gs[1].subgridspec(1, 4, wspace=.38)
-# c: test-time ablation on the trained CNNs
+mid = gs[1].subgridspec(1, 2, width_ratios=[1.2, 1], wspace=.25)
+# c: remove the texture (retrain on the mask) or the organoid (test time)
 a = fig.add_subplot(mid[0]); tag(a, "c")
-occ = []
-for s in ("std", "strong"):
-    o = pd.read_csv(MP / f"occlusion_spatial_idor_main_kfold4x10_{s}_rep1.csv")
-    for (dd_, cond), g2 in o[o.day.isin([24, 28, 30])].groupby(["day", "condition"]):
-        g2 = g2.dropna(subset=["prob_acceptable"]); occ.append(dict(setup=s, condition=cond, auc=roc_auc_score(g2.true_label, g2.prob_acceptable)))
-occ = pd.DataFrame(occ)
-order = ["original", "silhouette", "core_texture_removed", "no_organoid"]
-sns.barplot(data=occ, x="condition", y="auc", hue="setup", order=order, hue_order=["std", "strong"], palette=[COL["std"], COL["strong"]],
-            errorbar="sd", capsize=.08, edgecolor="k", linewidth=.6, ax=a)
-a.set_xticklabels(["original", "mask\nonly", "inside\ntexture\nremoved", "organoid\nremoved"], fontsize=9)
-a.axhline(.5, color="0.6", ls=":", lw=1); a.set_ylim(.3, .95); a.set_xlabel(""); a.set_ylabel("AUC, days 24–30")
-h, _ = a.get_legend_handles_labels(); a.legend(h[:2], ["CNN, whole image", "CNN + strong aug."], loc="upper right", fontsize=8)
-a.set_title("Edit the test image: mask only still\nworks; no organoid → chance")
-
-# d: retrain on the mask alone
-a = fig.add_subplot(mid[1]); tag(a, "d")
 PAIRS = [("whole frame", "std", "mask"), ("cropped", "bbox", "maskbbox")]
 x = np.arange(2)
 for off, idx, nm, hatch in ((-w / 2, 1, "trained on the image", None), (w / 2, 2, "trained on the mask only", "//")):
@@ -410,13 +378,17 @@ for off, idx, nm, hatch in ((-w / 2, 1, "trained on the image", None), (w / 2, 2
     a.bar(x + off, np.array(v) - .5, w, bottom=.5, color=[COL[p_[idx]] for p_ in PAIRS], edgecolor="k", lw=.6, hatch=hatch, label=nm)
     for xi, vi in zip(x + off, v):
         a.text(xi, vi + .008, f"{vi:.2f}", ha="center", fontsize=9.5)
-a.axhline(M["size2"]["auc"], color=SIZE2, lw=2, ls="--"); a.text(1.55, M["size2"]["auc"] + .008, "size alone", ha="right", fontsize=8.5, color=SIZE2)
-a.set_xticks(x); a.set_xticklabels(["CNN,\nwhole frame", "CNN,\ncropped"]); a.set_ylim(.5, .95); a.set_ylabel("AUC, day 30")
-a.legend(loc="upper left", fontsize=8)
-a.set_title("Retrain without texture: the mask\nalone gets most of the way")
+_o = pd.read_csv(MP / "occlusion_spatial_idor_main_kfold4x10_std_rep1.csv"); _o = _o[_o.day.isin([24, 28, 30])].dropna(subset=["prob_acceptable"])
+gone = np.mean([roc_auc_score(g2.true_label, g2.prob_acceptable) for _, g2 in _o[_o.condition == "no_organoid"].groupby("day")])
+a.bar(2.2, gone - .5, w, bottom=.5, color="w", edgecolor="k", lw=.6, hatch="xx"); a.text(2.2, max(gone, .5) + .008, f"{gone:.2f}", ha="center", fontsize=9.5)
+a.axhline(M["size2"]["auc"], color=SIZE2, lw=2, ls="--"); a.text(2.45, M["size2"]["auc"] + .008, "size alone", ha="right", fontsize=8.5, color=SIZE2)
+a.axhline(.5, color="0.6", ls=":", lw=1)
+a.set_xticks([0, 1, 2.2]); a.set_xticklabels(["CNN,\nwhole frame", "CNN,\ncropped", "organoid erased from the\ntest image (whole-image\nCNN, days 24–30)"]); a.set_ylim(.45, .95)
+a.set_ylabel("AUC, day 30"); a.legend(loc="upper left", fontsize=8.5)
+a.set_title("No texture needed: a CNN trained on the mask alone\ngets most of the way; no organoid → chance")
 
-# e: rescale
-a = fig.add_subplot(mid[2]); tag(a, "e")
+# d: rescale
+a = fig.add_subplot(mid[1]); tag(a, "d")
 o = pd.read_csv(MP / "occlusion_spatial_idor_main_kfold4x10_std_rep1.csv")
 w2 = o.pivot_table(index=["day", "organoid_id"], columns="condition", values="prob_acceptable").reset_index()
 for cond, c, nm in (("scaled_1.4", GOOD, "enlarged 1.4×"), ("scaled_0.7", BAD, "shrunk 0.7×")):
@@ -425,21 +397,6 @@ for cond, c, nm in (("scaled_1.4", GOOD, "enlarged 1.4×"), ("scaled_0.7", BAD, 
     a.fill_between(med.index, lo, hi, color=c, alpha=.2, lw=0); a.plot(med.index, med, "o-", color=c, lw=2, ms=5, mec="k", mew=.4, label=nm)
 a.axhline(0, color="0.6", ls=":", lw=1); day_axis(a); a.set_ylabel("change in P(Acceptable)\n(CNN, whole image)"); a.legend(loc="lower left", fontsize=8.5)
 a.set_title("Only resize the organoid:\nbigger → 'more acceptable'")
-
-# f: LSTM day blanking
-a = fig.add_subplot(mid[3]); tag(a, "f")
-dd = pd.read_csv(MP / "v2/lstm_day_dropout.csv")
-g = dd[(dd.readout == "mean") & (dd.window == "3-30")]
-base = g.drop_duplicates("organoid_id").set_index("organoid_id")
-out = []
-for day, h_ in g.groupby("day"):
-    pb_ = base.p_full.copy(); pb_[h_.organoid_id] = h_.set_index("organoid_id").p_blank
-    out.append((day, roc_auc_score(base.label, pb_) - roc_auc_score(base.label, base.p_full)))
-out = np.array(out)
-a.bar(range(len(out)), out[:, 1], color=COL["LSTM mean"], edgecolor="k", lw=.5)
-a.set_xticks(range(len(out))); a.set_xticklabels([f"{d:g}" for d in out[:, 0]], fontsize=8, rotation=90); a.set_xlabel("Day blanked")
-a.axhline(0, color="0.5", lw=.8); a.set_ylabel("change in LSTM AUC"); a.set_ylim(-.06, .06)
-a.set_title(f"LSTM: blanking any one day\nchanges AUC by ≤ {np.abs(out[:, 1]).max():.2f}")
 
 # g: what no model catches
 sub = gs[2].subgridspec(2, len(MISSED), wspace=.05, hspace=.3)
@@ -457,15 +414,15 @@ for i, b in enumerate(MISSED):
         if i == 0:
             a.set_ylabel(nm, fontsize=10, color=col)
             if r_ == 0:
-                tag(a, "g")
+                tag(a, "e")
                 a.text(0, 1.45, f"What no model catches: {len(MISSED)} of {len(Tb)} rejects ({len(MISSED) / len(Tb):.0%}) are called Acceptable by every "
                        "method (growth rule, all CNNs, LSTM); next to each, the same-plate accepted organoid closest in size",
                        transform=a.transAxes, fontsize=12, va="bottom")
 save(fig, "fig2_what_models_look_at")
 
 # ======================= SUPPLEMENT =======================
-fig = plt.figure(figsize=(17, 11))
-gs = GridSpec(2, 3, figure=fig, hspace=.45, wspace=.55)
+fig = plt.figure(figsize=(23, 11))
+gs = GridSpec(2, 4, figure=fig, hspace=.45, wspace=.55)
 
 a = fig.add_subplot(gs[0, 0]); tag(a, "a")
 for k, c in KC.items():
@@ -498,18 +455,18 @@ a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC
 a.legend(loc="upper left", fontsize=7.5)
 a.set_title("Adding borderline organoids (majority\nlabel) changes nothing (CNN cropped + bright.)")
 
-a = fig.add_subplot(gs[1, 0]); tag(a, "d")
+a = fig.add_subplot(gs[0, 3]); tag(a, "d")
 caught = (Tb < .5).where(Tb.notna()).mean() * 100
 caught["any"] = 100 * (1 - len(MISSED) / len(Tb))
 xs = np.arange(len(caught))
 a.bar(xs, caught, color=[SIZEG] + [COL[k] for k in ("std", "strong", "bbox", "brightbbox", "LSTM mean")] + ["0.15"], edgecolor="k", lw=.5)
 for i, v in enumerate(caught):
     a.text(i, v + 1.5, f"{v:.0f}%", ha="center", fontsize=9)
-a.set_xticks(xs); a.set_xticklabels(["growth\nrate", "CNN\nwhole", "CNN\nstrong", "CNN\ncrop", "CNN crop\n+ bright", "LSTM\n", "any\nmethod"], fontsize=8.5)
+a.set_xticks(xs); a.set_xticklabels(["growth\nrate", "CNN\nwhole", "CNN\nstrong", "CNN\ncrop", "CNN\ncrop +\nbright", "LSTM", "any\nmethod"], fontsize=8)
 a.set_ylabel(f"% of the {len(Tb)} rejects caught"); a.set_ylim(0, 100)
 a.set_title(f"Rejects caught by each method;\n{len(MISSED)} of {len(Tb)} by none")
 
-a = fig.add_subplot(gs[1, 1]); tag(a, "e")
+a = fig.add_subplot(gs[1, 0]); tag(a, "e")
 S = pd.read_csv(MP / "v2/shape_features.csv")
 FEATS = ["solidity", "circularity", "elongation", "skeleton_ends"]
 S["plate"] = S.organoid_id.map(plate); S["good"] = S.organoid_id.map(y)
@@ -525,7 +482,7 @@ a.axhline(0, color="0.6", ls=":", lw=1); a.set_xlabel(""); a.set_ylabel("shape v
 a.set_xticklabels(["solidity", "roundness", "elongation", "branch\nends"]); a.legend(loc="upper left", fontsize=8)
 a.set_title("The missed rejects are less round, but\nshape adds no CV gain")
 
-a = fig.add_subplot(gs[1, 2]); tag(a, "f")
+a = fig.add_subplot(gs[1, 1]); tag(a, "f")
 c30 = cnn[cnn.day == 30].set_index("model"); l30 = lstm[lstm.window == "3-30"].set_index("model")
 LAD = [("size, one cutoff", c30.loc["std", "size_auc"], SIZE1, None), ("size, two cutoffs", c30.loc["std", "flex_auc"], SIZE2, None),
        ("size + growth rate", l30.loc["LSTM mean", "flex_auc"], SIZEG, None),
@@ -535,4 +492,35 @@ for i, (nm, v, c, h_) in enumerate(LAD[::-1]):
     a.barh(i, v - .5, left=.5, color=c, edgecolor="k", lw=.6, height=.7, hatch=h_); a.text(v + .005, i, f"{v:.2f}", va="center", fontsize=9)
 a.set_yticks(range(len(LAD))); a.set_yticklabels([x_[0] for x_ in LAD[::-1]], fontsize=9); a.set_xlim(.5, .95); a.set_xlabel("AUC, day 30")
 a.set_title("Every model at day 30")
+# g: test-time ablation on the trained CNNs
+a = fig.add_subplot(gs[1, 2]); tag(a, "g")
+occ = []
+for s in ("std", "strong"):
+    o = pd.read_csv(MP / f"occlusion_spatial_idor_main_kfold4x10_{s}_rep1.csv")
+    for (dd_, cond), g2 in o[o.day.isin([24, 28, 30])].groupby(["day", "condition"]):
+        g2 = g2.dropna(subset=["prob_acceptable"]); occ.append(dict(setup=s, condition=cond, auc=roc_auc_score(g2.true_label, g2.prob_acceptable)))
+occ = pd.DataFrame(occ)
+order = ["original", "silhouette", "core_texture_removed", "no_organoid"]
+sns.barplot(data=occ, x="condition", y="auc", hue="setup", order=order, hue_order=["std", "strong"], palette=[COL["std"], COL["strong"]],
+            errorbar="sd", capsize=.08, edgecolor="k", linewidth=.6, ax=a)
+a.set_xticklabels(["original", "mask\nonly", "inside\ntexture\nremoved", "organoid\nremoved"], fontsize=9)
+a.axhline(.5, color="0.6", ls=":", lw=1); a.set_ylim(.3, .95); a.set_xlabel(""); a.set_ylabel("AUC, days 24–30")
+h, _ = a.get_legend_handles_labels(); a.legend(h[:2], ["CNN, whole image", "CNN + strong aug."], loc="upper right", fontsize=8)
+a.set_title("Edit the test image: mask only still\nworks; no organoid → chance")
+
+# h: LSTM day blanking
+a = fig.add_subplot(gs[1, 3]); tag(a, "h")
+dd = pd.read_csv(MP / "v2/lstm_day_dropout.csv")
+g = dd[(dd.readout == "mean") & (dd.window == "3-30")]
+base = g.drop_duplicates("organoid_id").set_index("organoid_id")
+out = []
+for day, h_ in g.groupby("day"):
+    pb_ = base.p_full.copy(); pb_[h_.organoid_id] = h_.set_index("organoid_id").p_blank
+    out.append((day, roc_auc_score(base.label, pb_) - roc_auc_score(base.label, base.p_full)))
+out = np.array(out)
+a.bar(range(len(out)), out[:, 1], color=COL["LSTM mean"], edgecolor="k", lw=.5)
+a.set_xticks(range(len(out))); a.set_xticklabels([f"{d:g}" for d in out[:, 0]], fontsize=8, rotation=90); a.set_xlabel("Day blanked")
+a.axhline(0, color="0.5", lw=.8); a.set_ylabel("change in LSTM AUC"); a.set_ylim(-.06, .06)
+a.set_title(f"LSTM: blanking any one day\nchanges AUC by ≤ {np.abs(out[:, 1]).max():.2f}")
+
 save(fig, "figS_supplement")
