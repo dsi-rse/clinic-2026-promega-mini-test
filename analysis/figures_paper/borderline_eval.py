@@ -1,5 +1,5 @@
 """Borderline (majority-label) brightbbox CNN vs the clear-only run, both against two-cutoff size
-on the same organoids and folds (Fig S c). Cohort: scripts/splits/make_splits.py scripts/splits/configs/idor.json
+on the same organoids and folds (Fig S b). Cohort: scripts/splits/make_splits.py scripts/splits/configs/idor.json
 --min-majority-votes 3 --output-suffix _main_minvotes3 (regular-image votes only). Run from the repo root
 on the cluster (core_env): python analysis/figures_paper/borderline_eval.py"""
 import json

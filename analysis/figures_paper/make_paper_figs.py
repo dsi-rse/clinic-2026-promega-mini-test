@@ -128,10 +128,15 @@ cnn = pd.read_csv(V2R / "perday_cnn.csv"); lstm = pd.read_csv(V2R / "perday_lstm
 SIZE1, SIZE2, SIZEG = "#A39E93", "#3D3D3D", "#6F6A60"   # warm grays: size one cutoff / two cutoffs / + growth
 NAMES = {"std": "CNN, whole image", "strong": "CNN, whole image\n+ strong augment.", "bbox": "CNN, cropped to organoid",
          "brightbbox": "CNN, cropped +\nbrightened", "LSTM mean": "LSTM, image\nsequence days 3–30"}
-COL = {"std": "#B8C48E", "strong": "#8A9A5B", "bbox": "#5E6B3A", "brightbbox": "#E0A526", "LSTM mean": "#6B4E71"}   # CNNs olive -> avocado, best mustard, LSTM plum
+COL = {"std": "#7D8B4E", "strong": "#5B7C99", "bbox": "#8C5E3C", "brightbbox": "#E0A526", "LSTM mean": "#6B4E71"}   # olive, dusty blue, walnut, mustard (best), plum
 MM2 = lambda la: np.exp(la) * 81e-6   # mask pixels at 9 um/px (all_data ar_target_um_per_px) -> mm^2
-EXAMPLES = ["BA1_96_1_H6_nosplit", "BA2_96_2_C3_nosplit", "BA2_96_2_E12_nosplit"]   # same organoids as the Grad-CAM panel
-EXNOTE = {"BA1_96_1_H6_nosplit": "accepted", "BA2_96_2_C3_nosplit": "rejected, stalled", "BA2_96_2_E12_nosplit": "rejected, overgrown"}
+GC = MP / "gradcam_v2"   # gradcam_v2.py: Grad-CAM of the current CNNs + the 3 example organoids (typical accepted / stalled / overgrown)
+GCX = np.load(GC / "gradcam_examples.npz") if (GC / "gradcam_examples.npz").exists() else None   # None: Grad-CAM panels left as placeholders
+EXAMPLES = [str(o) for o in GCX["examples"]] if GCX is not None else \
+    ["BA1_96_1_A7_nosplit", "BA1_96_1_G1_nosplit", "BA2_96_2_C6_nosplit"]   # gradcam_v2.py's rule picks these; same organoids in Fig 1 a and Fig 2 a
+EXNOTE = dict(zip(EXAMPLES, ["accepted", "rejected, stalled", "rejected, overgrown"]))
+VARIANTS_ = ["std", "strong", "bbox", "brightbbox"]
+GB_TITLE = "Whole-image CNNs only look at the organoid\nonce they start to work (~day 17)"
 
 
 def exlabel(o):
@@ -225,6 +230,7 @@ gs = GridSpec(3, 4, figure=fig, height_ratios=[1.15, 1, 1], hspace=.45, wspace=.
 sub = gs[0, :].subgridspec(3, 10, wspace=.06, hspace=.1, width_ratios=[1, 1, 1, 1, .2, 1, 1, 1, 1, 1])
 COLS = [("SIZE ONLY\n(mask area)", None), ("CNN, whole\nimage", (False, False)),
         ("CNN, cropped\nto organoid", (True, False)), ("CNN, cropped\n+ brightened", (True, True))]
+MCOL = {None: SIZE2, (False, False): COL["std"], (True, False): COL["bbox"], (True, True): COL["brightbbox"]}
 for i, o in enumerate(EXAMPLES):
     col = GOOD if y[o] == 1 else BAD
     for j, (nm, mode) in enumerate(COLS):
@@ -237,9 +243,9 @@ for i, o in enumerate(EXAMPLES):
             im = show(o, 30, *mode)
             if im is not None:
                 a.imshow(im)
-        frame(a, "0.4" if mode is None else col)
+        frame(a, MCOL[mode], 2)
         if i == 0:
-            a.set_title(nm + "\nday 30", fontsize=10, fontweight="bold" if mode is None else "normal")
+            a.set_title(nm + "\nday 30", fontsize=10, color=MCOL[mode], fontweight="bold")
         if j == 0:
             a.set_ylabel(exlabel(o), fontsize=9, color=col)
             if i == 0:
@@ -248,9 +254,10 @@ for i, o in enumerate(EXAMPLES):
         a = fig.add_subplot(sub[i, 5 + j]); im = show(o, d, False, False)
         if im is not None:
             a.imshow(im)
-        frame(a, col)
+        frame(a, COL["LSTM mean"], 2)
         if i == 0:
-            a.set_title(("LSTM: the whole image series\n" if j == 2 else "\n") + f"day {d}", fontsize=10)
+            a.set_title(("LSTM: the whole image series\n" if j == 2 else "\n") + f"day {d}", fontsize=10, color=COL["LSTM mean"],
+                        fontweight="bold" if j == 2 else "normal")
 
 # b: day-30 performance of the image models
 a = fig.add_subplot(gs[1, :2]); tag(a, "b")
@@ -294,8 +301,19 @@ a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC
 a.legend(loc="upper left", fontsize=7.5)
 a.set_title("Image models only work from ~day 20;\nsize alone is as good or better every day")
 
-# e: too small or too big
+# e: growth curves - rejects stall or overgrow
 a = fig.add_subplot(gs[2, 0]); tag(a, "e")
+for k, c in KC.items():
+    A_ = MM2(LA.loc[kind.index[kind == k]]); med, lo, hi = A_.median(), A_.quantile(.25), A_.quantile(.75)
+    a.fill_between(med.index, lo, hi, color=c, alpha=.18, lw=0)
+    a.plot(med.index, med, "o-", color=c, lw=2.2, ms=5, mec="k", mew=.4, ls="--" if "over" in k else "-", label=f"{k} (n={int((kind == k).sum())})")
+a.axvspan(14.5, 17.5, color="#fde7c8", zorder=0)
+a.set_yscale("log"); a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+a.set_yticks([0.1, 0.2, 0.5, 1, 2, 5]); a.set_ylabel("Organoid area (mm²)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
+a.set_title("Rejects stall or overgrow;\ngroups split at days 15–17 (shaded)")
+
+# f: too small or too big
+a = fig.add_subplot(gs[2, 1]); tag(a, "f")
 from scipy.stats import gaussian_kde
 d30 = pd.DataFrame({"mm2": MM2(LA[30]), "y": y}).dropna()
 xs_ = np.linspace(np.log10(d30.mm2.min()) - .15, np.log10(d30.mm2.max()) + .15, 400)
@@ -307,21 +325,20 @@ a.set_xlabel("Day-30 organoid area (mm²)"); a.set_ylabel("Density"); a.set_ylim
 a.set_title("Not Acceptable organoids are\ntoo small or too big")
 
 # g: best image model vs size alone
-a = fig.add_subplot(gs[2, 1:3]); tag(a, "f")
-G_ = [("size, one cutoff\n(bigger = better)", "size1", SIZE1), ("size, two cutoffs\n(too small or too big = bad)", "size2", SIZE2),
-      ("best image model\n(CNN cropped + brightened)", "brightbbox", COL["brightbbox"])]
+a = fig.add_subplot(gs[2, 2]); tag(a, "g")
+G_ = [("size,\none cutoff", "size1", SIZE1), ("size,\ntwo cutoffs", "size2", SIZE2), ("best image\nmodel", "brightbbox", COL["brightbbox"])]
 x = np.arange(len(G_))
 for off, met, hatch in ((-w / 2, "bal", None), (w / 2, "auc", "..")):
     v = [M[k][met] for _, k, _ in G_]; e = [M[k][met + "_sd"] for _, k, _ in G_]
     a.bar(x + off, np.array(v) - .5, w, bottom=.5, yerr=e, capsize=3, color=[c for *_, c in G_], edgecolor="k", lw=.6, hatch=hatch, error_kw=dict(lw=.8))
     for xi, vi, ei in zip(x + off, v, e):
-        a.text(xi, vi + ei + .008, f"{vi:.2f}", ha="center", fontsize=10)
-a.set_xticks(x); a.set_xticklabels([n for n, *_ in G_], fontsize=10); a.set_ylim(.5, 1); a.set_ylabel("Day-30 score")
-a.legend([Patch(fc="w", ec="k"), Patch(fc="w", ec="k", hatch="..")], ["balanced accuracy", "AUC"], loc="upper left", fontsize=9.5)
-a.set_title(f"One number (area, two cutoffs) matches the best image model on AUC\nand beats it on balanced accuracy (same {M['size2']['n']} organoids and folds)", fontsize=12)
+        a.text(xi, vi + ei + .008, f"{vi:.2f}", ha="center", fontsize=8.5)
+a.set_xticks(x); a.set_xticklabels([n for n, *_ in G_], fontsize=9.5); a.set_ylim(.5, 1); a.set_ylabel("Day-30 score")
+a.legend([Patch(fc="w", ec="k"), Patch(fc="w", ec="k", hatch="..")], ["bal. accuracy", "AUC"], loc="upper left", fontsize=8.5)
+a.set_title("Size alone (two cutoffs) matches the\nbest image model on AUC and beats\nit on balanced accuracy (same folds)")
 
 # h: does the LSTM add anything?
-a = fig.add_subplot(gs[2, 3]); tag(a, "g")
+a = fig.add_subplot(gs[2, 3]); tag(a, "h")
 W = ["3-13", "3-17", "3-24", "3-30"]; x = np.arange(4)
 a.plot(x, l0.flex_auc, "-", color=SIZEG, lw=3, marker="o", ms=6, label="size + growth rate")
 a.plot(x, l0.auc, "-", color=COL["LSTM mean"], lw=2.2, marker="s", ms=7, mec="k", mew=.5, label="LSTM, image series")
@@ -331,42 +348,64 @@ a.set_title("The image series adds nothing:\nLSTM ≤ size + growth rate in ever
 save(fig, "fig1_models_and_size")
 
 # ======================= FIG 2: what the models look at =======================
-fig = plt.figure(figsize=(18, 19))
-gs = GridSpec(3, 1, figure=fig, height_ratios=[1.25, 1, .85], hspace=.45)
-top = gs[0].subgridspec(1, 3, width_ratios=[2, .05, 1], wspace=.25)
+fig = plt.figure(figsize=(19, 21))
+gs = GridSpec(3, 1, figure=fig, height_ratios=[1.45, 1, .85], hspace=.4)
+top = gs[0].subgridspec(1, 3, width_ratios=[2.1, .08, 1], wspace=.25)
 
-# a: Grad-CAM examples
-sub = top[0].subgridspec(3, 3, wspace=.04, hspace=.1)
-EXF = {"BA1_96_1_H6_nosplit": "Dy30_acc_bothcorrect_BA1_96_1_H6.png", "BA2_96_2_C3_nosplit": "Dy30_notacc_bothcaught_BA2_96_2_C3.png",
-       "BA2_96_2_E12_nosplit": "Dy30_notacc_bothmissed_BA2_96_2_E12.png"}
-BOX = {"input": (.0915, .2835), "std": (.3015, .4925), "strong": (.8015, .9925)}
-for i, o in enumerate(EXAMPLES):
-    im = Image.open(V1F / "gradcam_examples" / EXF[o]).convert("RGB"); W_, H_ = im.size
-    col = GOOD if y[o] == 1 else BAD
-    for j, (k, nm) in enumerate((("input", "input, day 30"), ("std", "Grad-CAM: CNN, whole image"), ("strong", "Grad-CAM: CNN + strong augment."))):
-        y0, y1 = BOX[k]; a = fig.add_subplot(sub[i, j])
-        a.imshow(im.crop((int(.008 * W_), int(y0 * H_), int(.218 * W_), int(y1 * H_)))); a.set_xticks([]); a.set_yticks([])
+# a: Grad-CAM table - rows = the 4 CNNs (current models, own input each), columns = organoid x day
+GMOD = [("std", "CNN,\nwhole image"), ("strong", "CNN, whole\n+ strong aug."), ("bbox", "CNN,\ncropped"), ("brightbbox", "CNN, cropped\n+ brightened")]
+sub = top[0].subgridspec(len(GMOD), 2 * len(EXAMPLES), wspace=.04, hspace=.06)
+jet = plt.get_cmap("jet")
+for i, (v, vn) in enumerate(GMOD):
+    for j, (o, d) in enumerate([(o, d) for o in EXAMPLES for d in ("10", "30")]):
+        a = fig.add_subplot(sub[i, j]); col = GOOD if y[o] == 1 else BAD
+        k = f"{o}|{d}|{v}"
+        if GCX is not None and f"{k}|img" in GCX.files:
+            img, cam = GCX[f"{k}|img"].astype(float), GCX[f"{k}|cam"].astype(float)
+            a.imshow(np.clip(.55 * img + .45 * jet(cam)[..., :3], 0, 1))
+            a.text(.03, .04, f"P={float(GCX[f'{k}|p']):.2f}", transform=a.transAxes, fontsize=7.5, color="w",
+                   bbox=dict(fc="k", ec="none", alpha=.55, pad=1))
+        elif GCX is None:   # placeholder: the model's own input, no heat map yet
+            im = show(o, float(d), v in ("bbox", "brightbbox"), v == "brightbbox")
+            if im is not None:
+                a.imshow(im)
+            a.text(.5, .5, "Grad-CAM\npending", transform=a.transAxes, ha="center", va="center", fontsize=8, color="0.3",
+                   bbox=dict(fc="w", ec="none", alpha=.7, pad=1))
+        frame(a, COL[v], 2)
         if i == 0:
-            a.set_title(nm, fontsize=11)
+            a.set_title(f"day {d}", fontsize=10)
+            if d == "10":
+                a.text(1.02, 1.32, exlabel(o).replace("\n", " · ", 1), transform=a.transAxes, ha="center", fontsize=9, color=col)
         if j == 0:
-            a.set_ylabel(exlabel(o), fontsize=9, color=col)
+            a.set_ylabel(vn, fontsize=10, color=COL[v], fontweight="bold")
             if i == 0:
-                a.text(-0.6, 1.1, "a", transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
+                a.text(-0.55, 1.3, "a", transform=a.transAxes, fontsize=16, fontweight="bold", va="bottom")
 
-# b: Grad-CAM focus over days
+# b: heat on the organoid vs background, by day (all organoids, current models)
 a = fig.add_subplot(top[2]); tag(a, "b")
-for key, lab_, c in (("std", "CNN, whole image", COL["std"]), ("strong", "CNN + strong augment.", COL["strong"]), ("bboxstd", "CNN, cropped", COL["bbox"])):
-    r = pd.read_csv(MP / f"focus_pred_idor_main_kfold4x10_{key}_rep1.csv")
-    r["contrast"] = (r.focus / r.mask_frac) / ((1 - r.focus) / (1 - r.mask_frac))
-    med = r.groupby("day").contrast.median()
-    a.plot(med.index, med, "o-", color=c, lw=1.8, ms=5, mec="k", mew=.4, label=lab_)
-a.axvspan(2, 17, color="0.94", zorder=0)
-a.set_yscale("log"); a.axhline(1, color="0.5", ls="--", lw=1); day_axis(a); a.set_xlim(2, 31)
-a.yaxis.set_major_locator(matplotlib.ticker.FixedLocator([0.25, 0.5, 1, 2, 4, 8]))
-a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}×")); a.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-a.text(30.5, 1.05, "no focus", fontsize=8, color="0.4", ha="right", va="bottom")
-a.set_ylabel("Grad-CAM heat on organoid ÷ background\n(per pixel)"); a.legend(loc="lower right", fontsize=8.5)
-a.set_title("The CNNs only look at the organoid\nfrom day ~17, when they start to work")
+if (GC / "gradcam_focus.csv").exists():
+    GF = pd.read_csv(GC / "gradcam_focus.csv")
+else:   # interim: the V1 Grad-CAM runs (no cropped + brightened model)
+    GF = pd.concat([pd.read_csv(MP / f"focus_pred_idor_main_kfold4x10_{k}_rep1.csv").assign(model=v)
+                    for k, v in (("std", "std"), ("strong", "strong"), ("bboxstd", "bbox"))])
+    a.text(.98, .02, "interim: earlier models; cropped + brightened pending", transform=a.transAxes, ha="right", fontsize=7.5, color="0.4")
+# strong aug. was only trained on the whole image; both cropped models use standard aug.
+GLINE = {"std": (COL["std"], "-", "CNN, whole image"), "strong": (COL["strong"], "-", "CNN, whole + strong aug."),
+         "bbox": (COL["bbox"], "-", "CNN, cropped"), "brightbbox": (COL["brightbbox"], "-", "CNN, cropped + brightened")}
+for v, (c, ls, nm) in GLINE.items():
+    med = GF[GF.model == v].groupby("day").focus.median() * 100
+    a.plot(med.index, med, marker="o", ls=ls, color=c, lw=2, ms=5, mec="k", mew=.4, label=nm)
+# no-focus reference: the organoid's share of the input (heat spread evenly would give exactly this)
+for v, c, nm in (("std", "0.35", "whole"), ("bbox", "0.35", "cropped")):
+    ref = GF[GF.model == v].groupby("day").mask_frac.median() * 100
+    a.plot(ref.index, ref, ":", color=c, lw=1.8)
+    if pd.notna(ref.iloc[-1]): a.text(30.6, ref.iloc[-1], f"organoid's share\nof the {nm} image", fontsize=7.5, color=c, va="center", ha="left")
+a.axvspan(2, 17, color="0.93", zorder=0)
+a.text(9.5, .97, "models near chance\n(days 3–17)", transform=a.get_xaxis_transform(), ha="center", va="top", fontsize=8.5, color="0.35")
+day_axis(a); a.set_xlim(2, 31); a.set_ylim(0, 100)
+a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:.0f}%"))
+a.set_ylabel("% of the Grad-CAM heat on the organoid\n(median; dotted = no focus)"); a.legend(loc="center right", fontsize=7.5)
+a.set_title(GB_TITLE)
 
 mid = gs[1].subgridspec(1, 2, width_ratios=[1.2, 1], wspace=.25)
 # c: remove the texture (retrain on the mask) or the organoid (test time)
@@ -391,10 +430,11 @@ a.set_title("No texture needed: a CNN trained on the mask alone\ngets most of th
 a = fig.add_subplot(mid[1]); tag(a, "d")
 o = pd.read_csv(MP / "occlusion_spatial_idor_main_kfold4x10_std_rep1.csv")
 w2 = o.pivot_table(index=["day", "organoid_id"], columns="condition", values="prob_acceptable").reset_index()
-for cond, c, nm in (("scaled_1.4", GOOD, "enlarged 1.4×"), ("scaled_0.7", BAD, "shrunk 0.7×")):
+for cond, ls, nm in (("scaled_1.4", "-", "enlarged 1.4×"), ("scaled_0.7", "--", "shrunk 0.7×")):
     dl = (w2[cond] - w2["original"]).groupby(w2.day)
     med, lo, hi = dl.median(), dl.quantile(.25), dl.quantile(.75)
-    a.fill_between(med.index, lo, hi, color=c, alpha=.2, lw=0); a.plot(med.index, med, "o-", color=c, lw=2, ms=5, mec="k", mew=.4, label=nm)
+    a.fill_between(med.index, lo, hi, color=COL["std"], alpha=.15, lw=0)
+    a.plot(med.index, med, marker="o", ls=ls, color=COL["std"], lw=2, ms=5, mec="k", mew=.4, label=nm)
 a.axhline(0, color="0.6", ls=":", lw=1); day_axis(a); a.set_ylabel("change in P(Acceptable)\n(CNN, whole image)"); a.legend(loc="lower left", fontsize=8.5)
 a.set_title("Only resize the organoid:\nbigger → 'more acceptable'")
 
@@ -425,16 +465,6 @@ fig = plt.figure(figsize=(23, 11))
 gs = GridSpec(2, 4, figure=fig, hspace=.45, wspace=.55)
 
 a = fig.add_subplot(gs[0, 0]); tag(a, "a")
-for k, c in KC.items():
-    A_ = MM2(LA.loc[kind.index[kind == k]]); med, lo, hi = A_.median(), A_.quantile(.25), A_.quantile(.75)
-    a.fill_between(med.index, lo, hi, color=c, alpha=.18, lw=0)
-    a.plot(med.index, med, "o-", color=c, lw=2.2, ms=5, mec="k", mew=.4, ls="--" if "over" in k else "-", label=f"{k} (n={int((kind == k).sum())})")
-a.axvspan(14.5, 17.5, color="#fde7c8", zorder=0)
-a.set_yscale("log"); a.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
-a.set_yticks([0.1, 0.2, 0.5, 1, 2, 5]); a.set_ylabel("Organoid area (mm²)"); day_axis(a); a.legend(loc="upper left", fontsize=8.5)
-a.set_title("Rejects stall or overgrow;\ngroups split at days 15–17 (shaded)")
-
-a = fig.add_subplot(gs[0, 1]); tag(a, "b")
 for k in ("std", "strong", "bbox", "brightbbox"):
     d = cnn[cnn.model == k].sort_values("day")
     a.plot(d.day, d.auc, "o-", color=COL[k], lw=1.6, ms=4, mec="k", mew=.4, label=SHORTN[k].replace("\n", " "))
@@ -445,7 +475,7 @@ a.plot(b0.day, b0.flex_auc, "-", color=SIZE2, lw=3, label="size, two cutoffs"); 
 a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC"); day_axis(a); a.set_xlim(2, 31); a.legend(loc="upper left", fontsize=7)
 a.set_title("All CNNs and mask-only CNNs, every day")
 
-a = fig.add_subplot(gs[0, 2]); tag(a, "c")
+a = fig.add_subplot(gs[0, 1]); tag(a, "b")
 BL = pd.read_csv(MP / "borderline_mv3/borderline_vs_clear.csv")
 b1, b2 = BL[BL.model == "trained clear only"], BL[BL.model == "trained with borderline"]
 a.plot(b1.day, b1.size_clear, "-", color=SIZE2, lw=3, label="size, two cutoffs")
@@ -455,7 +485,7 @@ a.axhline(.5, color="0.7", ls=":", lw=1); a.set_ylim(.4, .95); a.set_ylabel("AUC
 a.legend(loc="upper left", fontsize=7.5)
 a.set_title("Adding borderline organoids (majority\nlabel) changes nothing (CNN cropped + bright.)")
 
-a = fig.add_subplot(gs[0, 3]); tag(a, "d")
+a = fig.add_subplot(gs[0, 2]); tag(a, "c")
 caught = (Tb < .5).where(Tb.notna()).mean() * 100
 caught["any"] = 100 * (1 - len(MISSED) / len(Tb))
 xs = np.arange(len(caught))
@@ -466,7 +496,7 @@ a.set_xticks(xs); a.set_xticklabels(["growth\nrate", "CNN\nwhole", "CNN\nstrong"
 a.set_ylabel(f"% of the {len(Tb)} rejects caught"); a.set_ylim(0, 100)
 a.set_title(f"Rejects caught by each method;\n{len(MISSED)} of {len(Tb)} by none")
 
-a = fig.add_subplot(gs[1, 0]); tag(a, "e")
+a = fig.add_subplot(gs[0, 3]); tag(a, "d")
 S = pd.read_csv(MP / "v2/shape_features.csv")
 FEATS = ["solidity", "circularity", "elongation", "skeleton_ends"]
 S["plate"] = S.organoid_id.map(plate); S["good"] = S.organoid_id.map(y)
@@ -482,7 +512,7 @@ a.axhline(0, color="0.6", ls=":", lw=1); a.set_xlabel(""); a.set_ylabel("shape v
 a.set_xticklabels(["solidity", "roundness", "elongation", "branch\nends"]); a.legend(loc="upper left", fontsize=8)
 a.set_title("The missed rejects are less round, but\nshape adds no CV gain")
 
-a = fig.add_subplot(gs[1, 1]); tag(a, "f")
+a = fig.add_subplot(gs[1, 0]); tag(a, "e")
 c30 = cnn[cnn.day == 30].set_index("model"); l30 = lstm[lstm.window == "3-30"].set_index("model")
 LAD = [("size, one cutoff", c30.loc["std", "size_auc"], SIZE1, None), ("size, two cutoffs", c30.loc["std", "flex_auc"], SIZE2, None),
        ("size + growth rate", l30.loc["LSTM mean", "flex_auc"], SIZEG, None),
@@ -492,8 +522,8 @@ for i, (nm, v, c, h_) in enumerate(LAD[::-1]):
     a.barh(i, v - .5, left=.5, color=c, edgecolor="k", lw=.6, height=.7, hatch=h_); a.text(v + .005, i, f"{v:.2f}", va="center", fontsize=9)
 a.set_yticks(range(len(LAD))); a.set_yticklabels([x_[0] for x_ in LAD[::-1]], fontsize=9); a.set_xlim(.5, .95); a.set_xlabel("AUC, day 30")
 a.set_title("Every model at day 30")
-# g: test-time ablation on the trained CNNs
-a = fig.add_subplot(gs[1, 2]); tag(a, "g")
+# f: test-time ablation on the trained CNNs
+a = fig.add_subplot(gs[1, 1]); tag(a, "f")
 occ = []
 for s in ("std", "strong"):
     o = pd.read_csv(MP / f"occlusion_spatial_idor_main_kfold4x10_{s}_rep1.csv")
@@ -508,8 +538,8 @@ a.axhline(.5, color="0.6", ls=":", lw=1); a.set_ylim(.3, .95); a.set_xlabel("");
 h, _ = a.get_legend_handles_labels(); a.legend(h[:2], ["CNN, whole image", "CNN + strong aug."], loc="upper right", fontsize=8)
 a.set_title("Edit the test image: mask only still\nworks; no organoid → chance")
 
-# h: LSTM day blanking
-a = fig.add_subplot(gs[1, 3]); tag(a, "h")
+# g: LSTM day blanking
+a = fig.add_subplot(gs[1, 2]); tag(a, "g")
 dd = pd.read_csv(MP / "v2/lstm_day_dropout.csv")
 g = dd[(dd.readout == "mean") & (dd.window == "3-30")]
 base = g.drop_duplicates("organoid_id").set_index("organoid_id")
