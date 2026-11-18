@@ -56,9 +56,32 @@ It does not check votes or metabolites.
 ## Flux fields (separate topic)
 
 `data/all_data_flux.json` has `flux_nmol_per_day`, `end_concentration_mM`, `blank_mM` in every
-assay block, but `data/all_data.json` does not. Nulls are concentrated in BA4 Dy20.5+ (100%) and a
-few small BA1/BA2 gaps. Flux completeness on the paper cohorts is not yet checked.
-See `notes/HANDOFF_2026_11.md`.
+assay block, but `data/all_data.json` does not. See `notes/HANDOFF_2026_11.md`.
+
+Source: `data/Corrected metabolite values to UChicago.xlsx` (sheets `Metabolites`, `MEtabolite Exclusions`).
+Flux = (end - blank) * volume / day; negative = consumed. 25,344 rows (4,224 organoid-days x 6 assays),
+22,717 with a flux number, 22,577 valid after exclusions.
+
+Why 2,789 of 24,924 assay blocks have null flux (checked against the xlsx, 2026-11-18):
+
+| Null blocks | Batch | Cause |
+|---|---|---|
+| 135 | BA1 (36), BA2 (99) | On Pedro's exclusion sheet (115 entries / 140 rows; 96 are MalateGlo). The xlsx *has* a flux number for them; `flux.py` nulls it on purpose. Largest gap: BA2 96_2 Dy10 (89). |
+| 2,654 | BA4 | No `Blank (mM)` in the xlsx (BA4 blanks exist Dy03-Dy15, partial at Dy17, none from Dy21), so flux is empty. BA4 is in no cohort here. |
+
+Blank looks like a fixed medium constant: 6 distinct values per day (one per metabolite), identical
+across BA1/BA2 plates. Filling BA4 blanks from BA1/BA2 is possible but unconfirmed (ask Pedro). Parked.
+
+### Flux vs concentration classifier (5-fold CV, `series_idor` n=134)
+
+Script `analysis/paper_2026_04/met_flux_kfold.py` (`make run ARGS="-m analysis.paper_2026_04.met_flux_kfold [--growth] --n-repeats 10"`).
+Same organoids and folds for both feature sets; LGBM + LogReg; missing values kept as NaN (n stays 134).
+- `met_conc`: `concentration_uM` + `initial_concentration` (floor -500 uM -> NaN). `met_flux`: `flux_nmol_per_day` + `end_concentration_mM` (no floor).
+- Result (10x5, no growth): flux ~ concentration. Paired differences mostly within +-0.03, below the
+  per-repeat SD (0.02-0.04); only clear gap is Dy03 LogReg (flux 0.068 worse, 0/10 repeats better).
+  Both weak before ~Dy20 (0.5-0.7), strong from Dy24 (0.82-0.93). LogReg >= LGBM throughout.
+- `--growth` appends per-metabolite delta of the primary field vs the previous day (none at Dy03).
+- Outputs (gitignored): `analysis_output/metabolites/met_flux_kfold_series_idor_10x5[_growth].json`.
 
 ## Inverted-image surveys
 
