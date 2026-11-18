@@ -166,7 +166,13 @@ def verify_winsorization(all_data, tol=0.03, low_q=LOW_Q, high_q=HIGH_Q,
     return report
 
 
-WIN_FIELDS = ("concentration_uM", "initial_concentration")
+WIN_FIELDS = (
+    "concentration_uM",
+    "initial_concentration",
+    # Pedro's corrected flux file (pipeline/metabolites/flux.py); absent -> written as None.
+    "flux_nmol_per_day",
+    "end_concentration_mM",
+)
 
 
 def add_winsorized_fields(all_data, low_q=LOW_Q, high_q=HIGH_Q):

@@ -73,7 +73,12 @@ CONCENTRATION_FLOOR = -500.0  # µM
 # "concentration_uM" / "initial_concentration" are raw assay-derived; "win" / "win_vol_norm"
 # are Promega-residualized (winsorized + per-metabolite scaled, MalateGlo behaves differently
 # because its raw reads sit at the noise floor).
-RAW_METABOLITE_FIELDS = ("concentration_uM", "initial_concentration")
+RAW_METABOLITE_FIELDS = ("concentration_uM", "initial_concentration", "flux_nmol_per_day")
+# Pedro's corrected file (2026-10): ``flux_nmol_per_day`` = (end - blank) * 50 uL / day
+# (negative = consumed, positive = secreted). The secondary column that pairs with it is
+# the END-point concentration (mM, negatives zeroed by Pedro) -- the source column is
+# misleadingly named "Initial Concentration". See pipeline/metabolites/flux.py.
+SECONDARY_FIELD = {"flux_nmol_per_day": "end_concentration_mM"}
 NORMALIZED_METABOLITE_FIELDS = ("win", "win_vol_norm")
 
 LABEL_DAY = "Dy30"
@@ -371,6 +376,7 @@ def require_batches(*batches: str) -> Callable:
 
 def require_complete_metabolites(
     required: Sequence[str] = REQUIRED_METABOLITES,
+    field: str = "concentration_uM",
 ) -> Callable:
     """Keep organoids that have all required metabolites on days where metabolite
     data is expected.
@@ -378,7 +384,7 @@ def require_complete_metabolites(
     Days with no metabolite data at all (e.g. Dy20, a pure imaging timepoint)
     are skipped — they don't disqualify the organoid.  The check is: for every
     day that has *any* metabolite dict, all ``required`` metabolites must be
-    present with non-null concentration_uM.
+    present with a non-null ``field`` (default ``concentration_uM``).
     """
 
     def f(org_id: str, records: dict) -> bool:
@@ -391,7 +397,7 @@ def require_complete_metabolites(
             for m in required:
                 if m not in mets:
                     return False
-                conc = mets[m].get("concentration_uM")
+                conc = mets[m].get(field)
                 if conc is None:
                     return False
         return has_any_met_day  # must have at least one day with metabolites
@@ -1022,6 +1028,10 @@ class OrganoidDataset:
             if day_num is not None and cond_fn(day_num):
                 active_mets.append(met)
 
+        # The secondary column is raw initial_concentration, except for flux where it
+        # is the end-point concentration (see SECONDARY_FIELD).
+        second_field = SECONDARY_FIELD.get(field, "initial_concentration")
+
         # Build feature names (order: <field> winsorized, then size-normalized)
         win_suffix = "_win" if winsorize else ""
         size_suffix = "_per_um2" if normalize_by_size else ""
@@ -1029,7 +1039,7 @@ class OrganoidDataset:
         for met in active_mets:
             feat_names.append(f"{met}_{field}{win_suffix}{size_suffix}")
             if include_initial:
-                feat_names.append(f"{met}_initial_concentration{win_suffix}{size_suffix}")
+                feat_names.append(f"{met}_{second_field}{win_suffix}{size_suffix}")
 
         # Winsorized inputs are READ from the persisted per-day-winsorized columns
         # in all_data.json (``<field>_win``, written by
@@ -1037,7 +1047,7 @@ class OrganoidDataset:
         # they are NOT recomputed here, so every model input comes from
         # all_data.json (concentration_uM -> concentration_uM_win, etc.).
         val_field = f"{field}_win" if winsorize else field
-        init_field = "initial_concentration_win" if winsorize else "initial_concentration"
+        init_field = f"{second_field}_win" if winsorize else second_field
 
         rows = []
         labels = []
@@ -1070,7 +1080,8 @@ class OrganoidDataset:
                 if field == "concentration_uM" and val < CONCENTRATION_FLOOR:
                     val = np.nan
                 if include_initial:
-                    init = met_data.get(init_field, np.nan)
+                    init = met_data.get(init_field)
+                    init = np.nan if init is None else init
                 if normalize_by_size:
                     val = val / size
                     if include_initial:
@@ -1185,10 +1196,12 @@ class OrganoidDataset:
                 if curr_c is None or prev_c is None:
                     skip = True
                     break
-                if curr_c < CONCENTRATION_FLOOR:
-                    curr_c = np.nan
-                if prev_c < CONCENTRATION_FLOOR:
-                    prev_c = np.nan
+                # The uM floor is meaningless for flux (negative = real consumption).
+                if field != "flux_nmol_per_day":
+                    if curr_c < CONCENTRATION_FLOOR:
+                        curr_c = np.nan
+                    if prev_c < CONCENTRATION_FLOOR:
+                        prev_c = np.nan
                 if normalize_by_size:
                     curr_c = curr_c / curr_size
                     prev_c = prev_c / prev_size

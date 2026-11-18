@@ -18,6 +18,8 @@ for _p in (REPO_ROOT, _METAB_PKG):
         sys.path.insert(0, str(_p))
 
 ALL_DATA = REPO_ROOT / "data" / "all_data.json"
+# all_data.json + Pedro's corrected flux fields (pipeline/metabolites/flux.py).
+ALL_DATA_FLUX = REPO_ROOT / "data" / "all_data_flux.json"
 
 
 @pytest.fixture(scope="session")
@@ -51,6 +53,43 @@ def full_cohort(all_data_path):
             {oid: "all" for oid in ds.organoid_ids},
             name="cv_all_full",
             provenance="test fixture (conftest.full_cohort)",
+        ),
+        strict=True,
+    )
+    return ds
+
+
+@pytest.fixture(scope="session")
+def flux_data_path() -> str:
+    assert ALL_DATA_FLUX.exists(), (
+        f"missing {ALL_DATA_FLUX}; run `python -m pipeline.metabolites.flux` then "
+        "`python -m pipeline.metabolites.winsorize --write --all-data data/all_data_flux.json`"
+    )
+    return str(ALL_DATA_FLUX)
+
+
+@pytest.fixture(scope="session")
+def flux_data(flux_data_path) -> dict:
+    """The flux-enriched ``all_data_flux.json`` dict. Loaded once."""
+    import json
+
+    with open(flux_data_path) as f:
+        return json.load(f)
+
+
+@pytest.fixture(scope="session")
+def flux_cohort(flux_data_path):
+    """The ``full`` cohort (248) built from the flux-enriched data, single 'all' split."""
+    from cohorts import build_cohort
+
+    from pipeline.splits import Splits
+
+    ds, _counts = build_cohort("full", flux_data_path)
+    ds.apply_splits(
+        Splits.from_dict(
+            {oid: "all" for oid in ds.organoid_ids},
+            name="cv_all_full_flux",
+            provenance="test fixture (conftest.flux_cohort)",
         ),
         strict=True,
     )
