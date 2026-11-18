@@ -1,7 +1,7 @@
 # Analysis Pipeline Status
 
-**Date**: 2026-05-12
-**Branch**: `main`
+**Date**: 2026-05-12 (snapshot; see [notes/HANDOFF_2026_11.md](notes/HANDOFF_2026_11.md) for the 2026-11 state, which supersedes anything below that conflicts)
+**Branch**: `main` at snapshot time; active dev is on `lding/combined_model`
 
 ## Configuration
 

@@ -52,6 +52,8 @@ export PYTHONPATH=$(pwd)
 
 Remote data lives at `/net/projects2/promega/2026_04_15_data` (the `DATA_ROOT` in the Makefile), organized as `raw/` (inputs — never written to), `intermediate/` (regenerable pipeline outputs), `models/` (checkpoints), and `analysis_output/` (manual figures). Code should never hard-code these paths — use environment variables or Makefile variables.
 
+> **Relocated checkout?** Read `notes/HANDOFF_2026_11.md` first — it lists hard-coded cluster paths (slurm files, `combined_lgbm.py`) and in-flight work not yet in beads.
+
 ## Project Rules
 
 ### 1. No pip install in system Python
