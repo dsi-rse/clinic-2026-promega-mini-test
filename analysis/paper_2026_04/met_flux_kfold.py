@@ -159,7 +159,16 @@ def run_day(
     n_folds: int,
     n_repeats: int,
     growth: bool = False,
+    fold_spec: list[dict] | None = None,
 ) -> dict | None:
+    """Per-day CV. With ``fold_spec`` (``repeat_details`` of a combined_kfold JSON) the
+    organoid order, labels, per-repeat seeds and fold assignments are taken from it, so
+    the folds are identical to the other modalities'."""
+    if fold_spec is not None:
+        all_org_ids = list(fold_spec[0]["org_ids"])
+        all_labels = np.array(fold_spec[0]["true_labels"], dtype=int)
+        n_repeats = len(fold_spec)
+        n_folds = int(max(fold_spec[0]["fold_assignments"])) + 1
     feature_sets = {}
     for name, fields in FEATURE_FIELDS.items():
         X, _ = build_features(
@@ -179,10 +188,18 @@ def run_day(
 
     for rep in range(n_repeats):
         rep_seed = SEED + rep * 1000
-        outer_cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=rep_seed)
         oof = {k: np.full(len(all_org_ids), np.nan) for k in mod_keys}
+        if fold_spec is not None:
+            spec = fold_spec[rep]
+            assert spec["org_ids"] == all_org_ids, "organoid order differs between repeats"
+            rep_seed = int(spec["seed"])
+            fa = np.array(spec["fold_assignments"])
+            splits = [(np.where(fa != f)[0], np.where(fa == f)[0]) for f in range(n_folds)]
+        else:
+            outer_cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=rep_seed)
+            splits = list(outer_cv.split(all_org_ids, all_labels))
 
-        for fold_i, (tr_idx, te_idx) in enumerate(outer_cv.split(all_org_ids, all_labels)):
+        for fold_i, (tr_idx, te_idx) in enumerate(splits):
             fold_seed = rep_seed + fold_i * 97
             sss = StratifiedShuffleSplit(1, test_size=0.15, random_state=fold_seed)
             inner_idx, _ = next(sss.split(tr_idx, all_labels[tr_idx]))
@@ -208,6 +225,7 @@ def run_day(
         repeat_details.append(
             {
                 "seed": rep_seed,
+                "fold_assignments": fa.tolist() if fold_spec is not None else None,
                 "org_ids": all_org_ids,
                 "true_labels": all_labels.tolist(),
                 "oof_probs": {k: [float(v) for v in oof[k]] for k in mod_keys},
@@ -241,6 +259,15 @@ def main() -> None:
         action="store_true",
         help="append day-over-day delta of the primary field per metabolite",
     )
+    parser.add_argument(
+        "--folds-from",
+        type=str,
+        default=None,
+        help="Per-day combined_kfold JSON template with {day}, e.g. "
+        "analysis_output/images/combined_results_kfold_series_idor_133_{day}.json. "
+        "Uses its organoids, seeds and fold assignments (identical folds); "
+        "--n-folds/--n-repeats are then read from it.",
+    )
     parser.add_argument("--out", type=Path, default=OUTPUT_PATH)
     args = parser.parse_args()
 
@@ -254,6 +281,7 @@ def main() -> None:
     assert len(all_org_ids) == EXPECTED_N, (
         f"series_idor cohort expected {EXPECTED_N}, got {len(all_org_ids)}"
     )
+    n0 = len(all_org_ids)
     print(
         f"Organoids: {len(all_org_ids)}  ({all_labels.sum()} NAcc, {(all_labels == 0).sum()} Acc)"
     )
@@ -267,7 +295,21 @@ def main() -> None:
             logger.warning("[%s] not in dataset, skipping", day)
             continue
         print(f"\n[{day}]")
-        res = run_day(day, ds, all_org_ids, all_labels, args.n_folds, args.n_repeats, args.growth)
+        fold_spec = None
+        if args.folds_from:
+            fpath = Path(args.folds_from.format(day=day))
+            if not fpath.exists():
+                logger.warning("[%s] fold file %s not found, skipping", day, fpath)
+                continue
+            fold_spec = json.loads(fpath.read_text())[day]["repeat_details"]
+            ids = fold_spec[0]["org_ids"]
+            assert set(ids) <= set(all_org_ids), "fold file has organoids outside the cohort"
+            logger.info(
+                "[%s] folds from %s: %d organoids (cohort %d)", day, fpath.name, len(ids), n0
+            )
+        res = run_day(
+            day, ds, all_org_ids, all_labels, args.n_folds, args.n_repeats, args.growth, fold_spec
+        )
         if res:
             all_results[day] = res
             args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -83,6 +83,17 @@ Same organoids and folds for both feature sets; LGBM + LogReg; missing values ke
 - `--growth` appends per-metabolite delta of the primary field vs the previous day (none at Dy03).
 - Outputs (gitignored): `analysis_output/metabolites/met_flux_kfold_series_idor_10x5[_growth].json`.
 
+### Fusion with flux vs concentration (n=133, 10x4-fold CV, identical folds)
+
+133 = `series_idor` 134 minus BA1 96_1 E10 (not in the earlier 139-run). Run with
+`combined_kfold --organoids analysis_output/organoids_133.txt --n-folds 4 --n-repeats 10`, then
+`met_flux_kfold --folds-from ...` (same folds) and `fusion_flux_plot`. Paths in `all_data.json` can be
+relocated with `PROMEGA_PATH_REMAP="OLD=NEW"`. Outputs (gitignored): `analysis_output/figures/fusion_flux_133.{png,csv}`.
+- Dy30 BA: met conc 0.852, met flux 0.865, morph 0.886, image 0.791; Met+Morph 0.893/0.892 (conc/flux);
+  Met+Morph+Img 0.882/0.884. Flux ~ concentration; fusion adds nothing over morphology alone.
+- All sources near chance through Dy17, jump at Dy20_5, plateau 0.85-0.89 from Dy24.
+- Dy17: 2 organoids (BA1 96_1 C11, D7) have no morphology row, so Dy17 is scored on n=131.
+
 ## Inverted-image surveys
 
 26 organoids in `all_data.json` have `label.inverted_votes` (a second survey pass with the image

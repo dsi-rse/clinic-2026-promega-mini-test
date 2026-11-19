@@ -810,6 +810,32 @@ def filters_for_mode(mode: str, modality: str = "both") -> list[Callable]:
 # OrganoidDataset
 # ---------------------------------------------------------------------------
 
+PATH_REMAP_ENV = "PROMEGA_PATH_REMAP"
+
+
+def remap_path_prefix(obj: object, old: str, new: str) -> tuple[object, int]:
+    """Replace a leading ``old`` with ``new`` in every string under ``obj``.
+
+    Returns ``(new_obj, n_replaced)``. Used to relocate the absolute paths stored in
+    ``all_data.json`` (``/net/projects2/promega/...``) to a local copy of the data.
+    """
+    if isinstance(obj, str):
+        if obj.startswith(old):
+            return new + obj[len(old) :], 1
+        return obj, 0
+    if isinstance(obj, dict):
+        out: dict = {}
+        total = 0
+        for k, v in obj.items():
+            out[k], n = remap_path_prefix(v, old, new)
+            total += n
+        return out, total
+    if isinstance(obj, list):
+        pairs = [remap_path_prefix(v, old, new) for v in obj]
+        return [p for p, _ in pairs], sum(n for _, n in pairs)
+    return obj, 0
+
+
 class OrganoidDataset:
     """Runtime dataset built from all_data.json with flexible split assignment.
 
@@ -837,6 +863,19 @@ class OrganoidDataset:
 
         with open(self.all_data_path) as f:
             self.all_data: dict = json.load(f)
+
+        # Optional path relocation: PROMEGA_PATH_REMAP="/old/prefix=/new/prefix".
+        remap = os.environ.get(PATH_REMAP_ENV)
+        if remap:
+            old, sep, new = remap.partition("=")
+            assert sep and old, f"{PATH_REMAP_ENV} must look like OLD=NEW, got {remap!r}"
+            n_records = len(self.all_data)
+            self.all_data, n_changed = remap_path_prefix(self.all_data, old, new)
+            assert len(self.all_data) == n_records, "record count changed during path remap"
+            warnings.warn(
+                f"{PATH_REMAP_ENV}: rewrote {n_changed} path strings {old!r} -> {new!r}",
+                stacklevel=2,
+            )
 
         # org_id → {label, split (optional), records}
         self._organoids: dict[str, dict] = {}

@@ -531,13 +531,17 @@ def main():
                         help="Number of repeated k-fold runs (different seeds)")
     parser.add_argument("--include-stitched", action="store_true",
                         help="Include stitched organoids (n=139, no Splits canonical)")
+    parser.add_argument("--organoids", type=Path, default=None,
+                        help="Text file with one organoid_id per line; restrict the CV to "
+                             "exactly these organoids (e.g. analysis_output/organoids_133.txt)")
     args = parser.parse_args()
 
     set_seed(SEED)
-    if args.include_stitched:
+    if args.include_stitched or args.organoids is not None:
+        # No canonical Splits (it would silently drop organoids outside the 220 list).
         ds = OrganoidDataset(ALL_DATA_PATH, splits=None,
                              filters=[*idor_ba1_ba2_filters(),
-                                      require_complete_series(drop_stitched=False)])
+                                      require_complete_series(drop_stitched=not args.include_stitched)])
     else:
         ds = OrganoidDataset(ALL_DATA_PATH, splits=Splits.canonical(),
                              filters=filters_for_mode(FILTER_MODE))
@@ -552,6 +556,17 @@ def main():
 
     all_org_ids = [o for o in ds.organoid_ids if ds.organoid_label(o) in LABEL_TO_INT]
     all_labels  = np.array([LABEL_TO_INT[ds.organoid_label(o)] for o in all_org_ids])
+    if args.organoids is not None:
+        wanted = [ln.strip() for ln in args.organoids.read_text().splitlines() if ln.strip()]
+        assert len(wanted) == len(set(wanted)), "duplicate ids in --organoids"
+        missing = sorted(set(wanted) - set(all_org_ids))
+        assert not missing, f"--organoids not in cohort: {missing[:5]}"
+        keep = set(wanted)
+        all_org_ids = [o for o in all_org_ids if o in keep]  # keep ds order (deterministic)
+        assert len(all_org_ids) == len(wanted), (
+            f"organoid count changed: {len(wanted)} -> {len(all_org_ids)}"
+        )
+        all_labels = np.array([LABEL_TO_INT[ds.organoid_label(o)] for o in all_org_ids])
     print(f"Organoids: {len(all_org_ids)}  ({all_labels.sum()} NAcc, {(all_labels==0).sum()} Acc)\n")
 
     days_to_run = args.days if args.days else DAY_ORDER
@@ -570,6 +585,8 @@ def main():
     # ── Save JSON ────────────────────────────────────────────────────────────
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     suffix = "_139" if args.include_stitched else ""
+    if args.organoids is not None:
+        suffix = f"_{len(all_org_ids)}"
     # Per-day output when a single day is requested (parallel jobs mode)
     if args.days and len(args.days) == 1:
         day_tag = args.days[0]
@@ -624,9 +641,9 @@ def main():
             if day_metrics:
                 series[label] = day_metrics
 
-        n_str = "139" if args.include_stitched else "132"
+        n_str = suffix.lstrip("_") or "132"
         cv_str = f"{args.n_repeats}×{args.n_folds}-fold"
-        fig_name = f"combined_kfold_balanced_accuracy_series_idor{'_139' if args.include_stitched else ''}.png"
+        fig_name = f"combined_kfold_balanced_accuracy_series_idor{suffix}.png"
         plot_balanced_accuracy_by_day(
             series,
             day_order=DAY_ORDER,
